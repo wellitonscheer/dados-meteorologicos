@@ -31,3 +31,7 @@ GOOGLE_SHEETS_SPREADSHEET_NAME = os.getenv(
 
 # Chave da Point Forecast API do Windy (tool de previsão do tempo).
 WINDY_API_KEY = os.getenv("WINDY_API_KEY", "")
+
+# Agenda do Google Calendar lida pela tool do agente (reutiliza a MESMA
+# credencial de service account do Sheets). Vazio = tool responde erro amigável.
+GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "")
