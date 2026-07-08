@@ -1,10 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { sendMessage } from "../api.js";
 
 export default function Home({ auth, onLogout }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   async function handleSend(e) {
     e.preventDefault();
@@ -25,7 +30,7 @@ export default function Home({ auth, onLogout }) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100">
+    <div className="h-screen flex flex-col bg-slate-100">
       {/* Topo com usuário logado */}
       <header className="bg-white shadow-sm px-6 py-3 flex items-center justify-between">
         <span className="text-slate-700">
@@ -40,7 +45,7 @@ export default function Home({ auth, onLogout }) {
       </header>
 
       {/* Área do chat */}
-      <main className="flex-1 overflow-y-auto p-4">
+      <main className="flex-1 min-h-0 overflow-y-auto p-4">
         <div className="max-w-2xl mx-auto space-y-3">
           {messages.length === 0 && (
             <p className="text-center text-slate-400 mt-10">
@@ -63,6 +68,7 @@ export default function Home({ auth, onLogout }) {
               </div>
             </div>
           ))}
+          <div ref={bottomRef} />
         </div>
       </main>
 
