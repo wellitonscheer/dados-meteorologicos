@@ -24,6 +24,9 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-app}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
       FRONTEND_ORIGIN: http://localhost:5173
+    volumes:
+      - ./backend:/code
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "8000:8000"
 
@@ -33,6 +36,10 @@ services:
       - backend
     environment:
       VITE_API_URL: http://localhost:8000
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     ports:
       - "5173:5173"
 
