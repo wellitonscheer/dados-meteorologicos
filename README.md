@@ -1,7 +1,7 @@
 # dados-meteorologicos
 
 CRUD simples de exemplo: tela de **login** + tela principal com um **chat**.
-O servidor sempre responde `olá` a qualquer mensagem enviada.
+O chat encaminha a mensagem para o **Gemini** (via SDK `google-genai`) e retorna a resposta gerada.
 
 ## Stack
 
@@ -13,7 +13,7 @@ O servidor sempre responde `olá` a qualquer mensagem enviada.
 ## Como rodar
 
 ```bash
-cp .env.example .env      # opcional (há defaults)
+cp .env.example .env      # defina GEMINI_API_KEY para o chat funcionar
 docker compose up --build
 ```
 
@@ -26,7 +26,7 @@ Usuário padrão criado automaticamente: **admin / admin**.
 
 1. Login valida usuário/senha no Postgres (senha em hash bcrypt) e retorna um token JWT.
 2. A tela principal mostra o usuário logado no topo e um campo de mensagem.
-3. Ao enviar qualquer texto, o backend responde sempre `olá` (nada é persistido).
+3. Ao enviar um texto, o backend chama o Gemini com a mensagem e retorna a resposta gerada (nada é persistido).
 
 ## Estrutura
 
