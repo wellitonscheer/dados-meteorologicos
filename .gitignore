@@ -1,3 +1,6 @@
 .env
 __pycache__/
 .vscode/
+
+# Credenciais de service account do Google (nunca commitar)
+camera-dados-meteorologicos-*.json

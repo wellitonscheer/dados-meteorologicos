@@ -17,3 +17,17 @@ FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 # Usuário semeado no startup.
 SEED_USERNAME = os.getenv("SEED_USERNAME", "admin")
 SEED_PASSWORD = os.getenv("SEED_PASSWORD", "admin")
+
+# Integração com Google Sheets (tools do agente). O JSON da conta de serviço é
+# montado no container pelo docker-compose (read-only) — nunca commitá-lo.
+GOOGLE_SHEETS_CREDENTIALS_FILE = os.getenv(
+    "GOOGLE_SHEETS_CREDENTIALS_FILE",
+    "/secrets/google-service-account.json",
+)
+GOOGLE_SHEETS_SPREADSHEET_NAME = os.getenv(
+    "GOOGLE_SHEETS_SPREADSHEET_NAME",
+    "Dados Climáticos por Produtor",
+)
+
+# Chave da Point Forecast API do Windy (tool de previsão do tempo).
+WINDY_API_KEY = os.getenv("WINDY_API_KEY", "")

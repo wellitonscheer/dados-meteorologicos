@@ -25,8 +25,12 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
       FRONTEND_ORIGIN: http://localhost:5173
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GOOGLE_SHEETS_CREDENTIALS_FILE: /secrets/google-service-account.json
+      GOOGLE_SHEETS_SPREADSHEET_NAME: "Dados Climáticos por Produtor"
+      WINDY_API_KEY: ${WINDY_API_KEY}
     volumes:
       - ./backend:/code
+      - ./camera-dados-meteorologicos-1d6806cf7e78.json:/secrets/google-service-account.json:ro
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "8000:8000"
