@@ -7,3 +7,7 @@ bcrypt==4.2.1
 python-jose[cryptography]==3.3.0
 pydantic==2.10.4
 google-genai
+gspread==6.2.1
+google-api-python-client
+google-auth
+requests==2.34.2

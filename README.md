@@ -1,7 +1,7 @@
 # dados-meteorologicos
 
 CRUD simples de exemplo: tela de **login** + tela principal com um **chat**.
-O chat encaminha a mensagem para o **Gemini** (via SDK `google-genai`) e retorna a resposta gerada.
+O chat é um **agente**: o **Gemini** (via SDK `google-genai`) decide quando usar as tools disponíveis — consulta à planilha Google Sheets "Dados Climáticos por Produtor" e previsão do tempo (Windy) — antes de responder.
 
 ## Stack
 
@@ -13,7 +13,7 @@ O chat encaminha a mensagem para o **Gemini** (via SDK `google-genai`) e retorna
 ## Como rodar
 
 ```bash
-cp .env.example .env      # defina GEMINI_API_KEY para o chat funcionar
+cp .env.example .env      # defina GEMINI_API_KEY e WINDY_API_KEY
 docker compose up --build
 ```
 
@@ -21,6 +21,11 @@ docker compose up --build
 - API (docs): http://localhost:8000/docs
 
 Usuário padrão criado automaticamente: **admin / admin**.
+
+### Tools do agente (Google Sheets e Windy)
+
+- **Google Sheets:** coloque o JSON da service account na raiz do repositório com o nome `camera-dados-meteorologicos-1d6806cf7e78.json` (ou ajuste o volume no `docker-compose.yml`) e compartilhe a planilha "Dados Climáticos por Produtor" com `dados-sheets@camera-dados-meteorologicos.iam.gserviceaccount.com` (permissão de leitor basta). O arquivo está no `.gitignore` — nunca deve ser commitado.
+- **Windy:** defina `WINDY_API_KEY` no `.env` (chave da [Point Forecast API](https://api.windy.com/point-forecast)).
 
 ## Como funciona
 
