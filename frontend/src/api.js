@@ -1,4 +1,7 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Em dev, o compose define VITE_API_URL=http://localhost:8000 (front e back em
+// origens diferentes). Em produção o front é servido pelo nginx na MESMA origem
+// que faz proxy de /api, então VITE_API_URL fica vazio e as chamadas são relativas.
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 export async function login(username, password) {
   const res = await fetch(`${API_URL}/api/login`, {

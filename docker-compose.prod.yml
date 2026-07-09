@@ -1,0 +1,65 @@
+# Compose de PRODUÇÃO (exposição via túnel Cloudflare/ngrok).
+# Diferente do docker-compose.yml (dev): sem bind mounts, sem --reload, portas do
+# db/backend NÃO publicadas, frontend em build de produção servido por nginx.
+#
+# Subir:  docker compose -f docker-compose.prod.yml up -d --build
+# Requer um .env com segredos fortes: APP_ENV=production, SECRET_KEY, senhas etc.
+# O túnel conecta em 127.0.0.1:8080 (única porta exposta, só no loopback).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD forte no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-app}
+      SECRET_KEY: ${SECRET_KEY:?defina SECRET_KEY forte no .env}
+      SEED_USERNAME: ${SEED_USERNAME:-admin}
+      SEED_PASSWORD: ${SEED_PASSWORD:?defina SEED_PASSWORD forte no .env}
+      # Domínio público do túnel (ex.: app.exemplo.com) — protege Host e CORS.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-*}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GOOGLE_SHEETS_CREDENTIALS_FILE: /secrets/google-service-account.json
+      GOOGLE_SHEETS_SPREADSHEET_NAME: "Dados Climáticos por Produtor"
+      GOOGLE_SHEETS_WORKSHEET_NAME: ${GOOGLE_SHEETS_WORKSHEET_NAME:-Sheet1}
+      GOOGLE_SHEETS_PROPRIEDADES_SPREADSHEET_NAME: "Produtores Propriedades"
+      GOOGLE_SHEETS_PROPRIEDADES_WORKSHEET_NAME: ${GOOGLE_SHEETS_PROPRIEDADES_WORKSHEET_NAME:-Sheet1}
+      GOOGLE_CALENDAR_ID: ${GOOGLE_CALENDAR_ID:-}
+      WINDY_API_KEY: ${WINDY_API_KEY}
+    volumes:
+      - ./logs:/logs
+      - ./camera-dados-meteorologicos-1d6806cf7e78.json:/secrets/google-service-account.json:ro
+    # --proxy-headers para o backend confiar no X-Forwarded-* vindo do nginx/túnel.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    depends_on:
+      - backend
+    # Exposto SÓ no loopback: o túnel (cloudflared/ngrok) aponta para 127.0.0.1:8080.
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+
+volumes:
+  db_data:

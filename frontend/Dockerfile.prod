@@ -1,0 +1,15 @@
+# Build de produção do frontend, servido por nginx (que também faz proxy de /api
+# para o backend). Diferente do Dockerfile de dev, que roda o dev server do Vite.
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json ./
+RUN npm install
+COPY . .
+# Sem VITE_API_URL definido -> import.meta.env.VITE_API_URL fica vazio -> as
+# chamadas em api.js viram relativas (/api/...), servidas pela mesma origem nginx.
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
