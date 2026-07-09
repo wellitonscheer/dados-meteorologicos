@@ -40,14 +40,16 @@ export async function sendMessage(text, token, model) {
 }
 
 // Versão streaming (SSE) do envio de mensagem. Usa fetch + reader (não
-// EventSource, que não permite header Authorization) e vai chamando os callbacks
-// conforme os eventos do agente chegam em tempo real:
+// EventSource, que não permite header Authorization). `history` são os turnos
+// anteriores ([{ role, text }]) reenviados a cada mensagem para o modelo ter o
+// contexto da conversa. Vai chamando os callbacks conforme os eventos do agente
+// chegam em tempo real:
 //   onText(delta)            -> pedaço do texto da resposta
 //   onTool({ nome, argumentos }) -> uma tool prestes a rodar
 //   onToolFim({ nome, erro })    -> tool concluída (✓/⚠)
 //   onErro(mensagem)         -> erro amigável (encerra)
 //   onFim()                  -> fim da resposta
-export async function sendMessageStream(text, token, model, handlers = {}) {
+export async function sendMessageStream(text, token, model, history = [], handlers = {}) {
   const { onText, onTool, onToolFim, onErro, onFim } = handlers;
 
   const res = await fetch(`${API_URL}/api/message/stream`, {
@@ -56,7 +58,8 @@ export async function sendMessageStream(text, token, model, handlers = {}) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ text, model: model || undefined }),
+    // history = turnos anteriores (para o modelo ter o contexto da conversa)
+    body: JSON.stringify({ text, model: model || undefined, history }),
   });
   if (!res.ok || !res.body) {
     throw new Error("Falha ao enviar mensagem");

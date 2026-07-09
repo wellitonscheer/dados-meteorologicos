@@ -53,6 +53,14 @@ export default function Home({ auth, onLogout }) {
     const content = text.trim();
     if (!content || sending) return;
 
+    // Histórico visível (turnos anteriores) para o modelo ter o contexto da conversa.
+    // `messages` aqui ainda reflete só os turnos já concluídos — o setMessages abaixo é
+    // assíncrono e o botão fica travado (`sending`) enquanto um envio está em curso.
+    // Ignora balões vazios, em progresso ou que terminaram em erro.
+    const history = messages
+      .filter((m) => m.text?.trim() && !m.streaming && !m.erro)
+      .map((m) => ({ role: m.from === "me" ? "user" : "assistant", text: m.text }));
+
     // Mensagem do usuário + balão do assistente "em progresso".
     setMessages((prev) => [
       ...prev,
@@ -63,7 +71,7 @@ export default function Home({ auth, onLogout }) {
     setSending(true);
 
     try {
-      await sendMessageStream(content, auth.token, model, {
+      await sendMessageStream(content, auth.token, model, history, {
         onTool: ({ nome, argumentos }) =>
           atualizarUltima((m) => ({
             ...m,
@@ -88,6 +96,7 @@ export default function Home({ auth, onLogout }) {
             ...m,
             text: m.text ? `${m.text}\n\n${mensagem}` : mensagem,
             streaming: false,
+            erro: true, // não reenvia mensagem de erro como histórico
           })),
         onFim: () => atualizarUltima((m) => ({ ...m, streaming: false })),
       });
@@ -96,6 +105,7 @@ export default function Home({ auth, onLogout }) {
         ...m,
         text: m.text ? `${m.text}\n\nErro: ${err.message}` : `Erro: ${err.message}`,
         streaming: false,
+        erro: true, // não reenvia mensagem de erro como histórico
       }));
     } finally {
       // rede de segurança: garante que o balão não fique "streamando" pra sempre

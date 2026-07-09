@@ -122,7 +122,26 @@ def _chamadas_acumuladas(chamadas: dict):
     return resultado
 
 
-def _conversar_stream(texto_usuario: str, modelo: str):
+def _montar_entrada(historico, texto_usuario: str):
+    """Monta o `input` da 1ª chamada ao Gemini a partir do histórico da conversa.
+
+    Sem histórico, devolve a string da mensagem atual (comportamento de sempre).
+    Com histórico, devolve a lista de turnos (`user_input` / `model_output`) seguida
+    da mensagem atual — assim o modelo recebe o contexto completo da conversa. Os
+    shapes seguem a Interactions API; turnos de histórico não exigem ids. Trocar por
+    um preâmbulo de texto (caso a API rejeite os turnos) é uma mudança só aqui.
+    """
+    if not historico:
+        return texto_usuario
+    entrada = []
+    for h in historico:
+        tipo = "user_input" if h.role == "user" else "model_output"
+        entrada.append({"type": tipo, "content": [{"type": "text", "text": h.text}]})
+    entrada.append({"type": "user_input", "content": [{"type": "text", "text": texto_usuario}]})
+    return entrada
+
+
+def _conversar_stream(texto_usuario: str, modelo: str, historico=None):
     """Roda o loop de function calling em streaming, emitindo eventos de domínio.
 
     Cada item gerado é um dict com uma chave "tipo":
@@ -132,8 +151,11 @@ def _conversar_stream(texto_usuario: str, modelo: str):
       {"tipo": "erro",     "mensagem": str}                   # erro amigável (encerra)
       {"tipo": "fim"}                                         # fim da resposta
     """
-    logger.info("chamando Gemini em streaming (modelo=%s), input=%r", modelo, texto_usuario)
-    entrada = texto_usuario
+    logger.info(
+        "chamando Gemini em streaming (modelo=%s, turnos_historico=%d), input=%r",
+        modelo, len(historico or []), texto_usuario,
+    )
+    entrada = _montar_entrada(historico, texto_usuario)
     previous_id = None
     algum_texto = False
 
@@ -247,19 +269,19 @@ def _conversar_stream(texto_usuario: str, modelo: str):
     yield {"tipo": "fim"}
 
 
-def stream_agente(texto_usuario: str, modelo: str | None = None):
+def stream_agente(texto_usuario: str, modelo: str | None = None, historico=None):
     """Versão streaming (para o endpoint SSE): gera os eventos de domínio."""
-    return _conversar_stream(texto_usuario, _resolver_modelo(modelo))
+    return _conversar_stream(texto_usuario, _resolver_modelo(modelo), historico)
 
 
-def executar_agente(texto_usuario: str, modelo: str | None = None) -> str:
+def executar_agente(texto_usuario: str, modelo: str | None = None, historico=None) -> str:
     """Drena o stream e devolve a resposta final em texto.
 
     Converte o erro de cota do Gemini em mensagem amigável; erros inesperados
     propagam (o chat.py devolve 502).
     """
     partes = []
-    for ev in _conversar_stream(texto_usuario, _resolver_modelo(modelo)):
+    for ev in _conversar_stream(texto_usuario, _resolver_modelo(modelo), historico):
         if ev["tipo"] == "texto":
             partes.append(ev["delta"])
         elif ev["tipo"] == "erro":

@@ -31,7 +31,7 @@ def send_message(
     _user: User = Depends(get_current_user),
 ):
     try:
-        reply = executar_agente(data.text, data.model)
+        reply = executar_agente(data.text, data.model, data.history)
     except Exception as exc:  # falha ao chamar o Gemini -> erro limpo p/ o front
         logger.exception("Falha ao executar o agente (mensagem=%r)", data.text)
         raise HTTPException(status_code=502, detail="Erro ao consultar o Gemini") from exc
@@ -54,7 +54,7 @@ def send_message_stream(
 
     def gerar():
         try:
-            for evento in stream_agente(data.text, data.model):
+            for evento in stream_agente(data.text, data.model, data.history):
                 yield _sse(evento)
         except Exception:
             logger.exception("Falha no stream do agente (mensagem=%r)", data.text)
