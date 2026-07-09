@@ -1,5 +1,26 @@
 import { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { getModels, sendMessageStream } from "../api.js";
+
+// Plugins e componentes do markdown em escopo de módulo: evita recriar os
+// objetos a cada delta de streaming (que dispararia re-parse desnecessário).
+const remarkPlugins = [remarkGfm];
+
+const mdComponents = {
+  // links abrem em nova aba, com segurança
+  a({ node, ...props }) {
+    return <a {...props} target="_blank" rel="noopener noreferrer" />;
+  },
+  // tabela com rolagem horizontal dentro do balão estreito (max-w-[75%])
+  table({ node, ...props }) {
+    return (
+      <div className="overflow-x-auto">
+        <table {...props} />
+      </div>
+    );
+  },
+};
 
 // Formata os argumentos de uma tool de forma compacta: k=v, k=v
 function formatVal(v) {
@@ -184,12 +205,21 @@ export default function Home({ auth, onLogout }) {
                     ))}
                   </div>
                 )}
-                <div className="whitespace-pre-wrap">
-                  {m.text}
-                  {m.streaming && (
-                    <span className="ml-0.5 animate-pulse text-slate-400">▌</span>
-                  )}
-                </div>
+                {m.from === "server" ? (
+                  <div className="prose prose-sm prose-slate max-w-none break-words prose-pre:whitespace-pre-wrap prose-pre:break-words">
+                    <ReactMarkdown
+                      remarkPlugins={remarkPlugins}
+                      components={mdComponents}
+                    >
+                      {m.text}
+                    </ReactMarkdown>
+                    {m.streaming && (
+                      <span className="animate-pulse text-slate-400">▌</span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="whitespace-pre-wrap break-words">{m.text}</div>
+                )}
               </div>
             </div>
           ))}
