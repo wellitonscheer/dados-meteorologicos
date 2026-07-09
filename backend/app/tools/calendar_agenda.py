@@ -96,8 +96,6 @@ def listar_eventos(dias: int = 7, max_resultados: int = 20):
                         "fim": fim.get("dateTime", fim.get("date")),
                         "dia_inteiro": "date" in inicio,
                         "local": ev.get("location"),
-                        "link": ev.get("htmlLink"),
-                        "status": ev.get("status"),
                     }
                 )
                 if len(eventos) >= max_resultados:
@@ -127,8 +125,8 @@ DECLARATIONS = [
             "Lista os próximos compromissos/eventos da agenda do Google Calendar "
             "configurada, do momento atual até 'dias' à frente, em ordem "
             "cronológica. Cada evento traz título, início, fim, se é de dia "
-            "inteiro (nesse caso 'fim' é exclusivo — o dia seguinte ao último), "
-            "local, link e status (fuso America/Sao_Paulo). Use para perguntas "
+            "inteiro (nesse caso 'fim' é exclusivo — o dia seguinte ao último) e "
+            "local (fuso America/Sao_Paulo). Use para perguntas "
             "sobre agenda, compromissos, reuniões, prazos e datas."
         ),
         "parameters": {

@@ -27,6 +27,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GOOGLE_SHEETS_CREDENTIALS_FILE: /secrets/google-service-account.json
       GOOGLE_SHEETS_SPREADSHEET_NAME: "Dados Climáticos por Produtor"
+      GOOGLE_SHEETS_WORKSHEET_NAME: ${GOOGLE_SHEETS_WORKSHEET_NAME:-Sheet1}
       GOOGLE_CALENDAR_ID: ${GOOGLE_CALENDAR_ID:-}
       WINDY_API_KEY: ${WINDY_API_KEY}
     volumes:
