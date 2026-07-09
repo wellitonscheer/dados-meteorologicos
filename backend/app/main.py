@@ -1,3 +1,4 @@
+import logging
 import time
 from contextlib import asynccontextmanager
 
@@ -8,8 +9,12 @@ from sqlalchemy.exc import OperationalError
 
 from .config import FRONTEND_ORIGIN
 from .database import Base, SessionLocal, engine
+from .logging_config import configurar_logging
 from .routers import auth, chat
 from .seed import seed_default_user
+
+configurar_logging()
+logger = logging.getLogger("app.startup")
 
 
 def wait_for_db(max_tries: int = 30, delay: float = 1.0) -> None:
@@ -20,7 +25,7 @@ def wait_for_db(max_tries: int = 30, delay: float = 1.0) -> None:
                 conn.execute(text("SELECT 1"))
             return
         except OperationalError:
-            print(f"[startup] banco indisponível, tentativa {attempt}/{max_tries}...")
+            logger.warning("banco indisponível, tentativa %d/%d...", attempt, max_tries)
             time.sleep(delay)
     raise RuntimeError("Não foi possível conectar ao banco de dados")
 
@@ -34,7 +39,7 @@ async def lifespan(app: FastAPI):
         seed_default_user(db)
     finally:
         db.close()
-    print("[startup] pronto")
+    logger.info("pronto")
     yield
 
 

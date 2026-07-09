@@ -4,3 +4,6 @@ __pycache__/
 
 # Credenciais de service account do Google (nunca commitar)
 camera-dados-meteorologicos-*.json
+
+# Logs da aplicação (gerados em runtime)
+logs/
