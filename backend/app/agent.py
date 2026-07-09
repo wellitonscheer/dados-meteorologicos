@@ -1,4 +1,12 @@
-"""Loop do agente: conversa com o Gemini executando tools (function calling)."""
+"""Loop do agente: conversa com o Gemini executando tools (function calling).
+
+O loop roda em modo *streaming* (Interactions API, `stream=True`) e emite
+"eventos de domínio" (dicts) enquanto acontece: tools chamadas (nome + args) e
+os pedaços do texto final. Dois consumidores usam o mesmo núcleo:
+- `stream_agente` -> alimenta o endpoint SSE (chat ao vivo);
+- `executar_agente` -> drena o gerador e devolve a string final (endpoint
+  clássico `/api/message` e usos não-streaming).
+"""
 import json
 import logging
 
@@ -30,6 +38,15 @@ MENSAGEM_QUOTA = (
     "Tente novamente daqui a alguns minutos."
 )
 
+MENSAGEM_SEM_RESPOSTA = (
+    "Não consegui concluir a consulta dentro do limite de etapas. "
+    "Tente reformular a pergunta."
+)
+
+MENSAGEM_ERRO_GENERICO = (
+    "Ocorreu um erro ao consultar o Gemini. Tente novamente em instantes."
+)
+
 SYSTEM_INSTRUCTION = (
     "Você é um assistente de dados meteorológicos para produtores rurais. "
     f"Você tem acesso à planilha '{GOOGLE_SHEETS_SPREADSHEET_NAME}' pela tool "
@@ -43,17 +60,20 @@ SYSTEM_INSTRUCTION = (
 )
 
 
-def _executar_tool(nome: str, argumentos: dict) -> str:
+def _executar_tool(nome: str, argumentos: dict):
+    """Executa a tool e devolve o objeto de retorno (serializável em JSON).
+
+    Erros esperados/ inesperados viram `{"erro": "..."}` para o modelo explicar
+    ao usuário; nunca levanta exceção.
+    """
     logger.info("executando tool %s com argumentos %s", nome, argumentos)
     funcao = TOOL_FUNCTIONS.get(nome)
     if funcao is None:
-        retorno = {"erro": f"Tool desconhecida: {nome}"}
-    else:
-        try:
-            retorno = funcao(**argumentos)
-        except Exception as exc:  # erro inesperado vira resultado p/ o modelo explicar
-            retorno = {"erro": f"Falha ao executar a tool {nome}: {exc}"}
-    return json.dumps(retorno, ensure_ascii=False, default=str)
+        return {"erro": f"Tool desconhecida: {nome}"}
+    try:
+        return funcao(**argumentos)
+    except Exception as exc:  # erro inesperado vira resultado p/ o modelo explicar
+        return {"erro": f"Falha ao executar a tool {nome}: {exc}"}
 
 
 def _resolver_modelo(modelo: str | None) -> str:
@@ -65,51 +85,6 @@ def _resolver_modelo(modelo: str | None) -> str:
     return MODELO_PADRAO
 
 
-def _conversar(texto_usuario: str, modelo: str) -> str:
-    """Roda o loop de function calling e retorna a resposta final em texto."""
-    logger.info("chamando Gemini (modelo=%s), input=%r", modelo, texto_usuario)
-    interaction = client.interactions.create(
-        model=modelo,
-        input=texto_usuario,
-        tools=TOOL_DECLARATIONS,
-        system_instruction=SYSTEM_INSTRUCTION,
-    )
-    for _ in range(MAX_ITERACOES):
-        chamadas = [s for s in interaction.steps if s.type == "function_call"]
-        if not chamadas:
-            break
-        resultados = [
-            {
-                "type": "function_result",
-                "name": chamada.name,
-                "call_id": chamada.id,
-                "result": [
-                    {
-                        "type": "text",
-                        "text": _executar_tool(chamada.name, chamada.arguments or {}),
-                    }
-                ],
-            }
-            for chamada in chamadas
-        ]
-        # tools e system_instruction são interaction-scoped na Interactions API:
-        # precisam ser reenviados a cada chamada para valerem. Sem o
-        # system_instruction aqui, o guardrail "só dados das tools / português"
-        # não se aplicaria justamente no turno que redige a resposta final.
-        # Custo ~zero: em modo stateful o prefixo estável entra no cache implícito.
-        interaction = client.interactions.create(
-            model=modelo,
-            previous_interaction_id=interaction.id,
-            tools=TOOL_DECLARATIONS,
-            system_instruction=SYSTEM_INSTRUCTION,
-            input=resultados,
-        )
-    return interaction.output_text or (
-        "Não consegui concluir a consulta dentro do limite de etapas. "
-        "Tente reformular a pergunta."
-    )
-
-
 def _e_erro_de_quota(exc: Exception) -> bool:
     """Reconhece o erro de cota (429) do Gemini sem depender da classe privada do SDK."""
     if getattr(exc, "status_code", None) == 429:
@@ -118,12 +93,175 @@ def _e_erro_de_quota(exc: Exception) -> bool:
     return any(t in texto for t in ("429", "resource_exhausted", "quota", "too_many_requests"))
 
 
+def _chamadas_da_interacao(final):
+    """Extrai as function calls de uma interação completa (fonte autoritativa)."""
+    passos = getattr(final, "steps", None) or []
+    return [
+        {"id": s.id, "name": s.name, "args": dict(getattr(s, "arguments", None) or {})}
+        for s in passos
+        if getattr(s, "type", None) == "function_call"
+    ]
+
+
+def _chamadas_acumuladas(chamadas: dict):
+    """Reconstrói as function calls a partir do que foi acumulado no stream.
+
+    Usado quando não veio o evento `interaction.completed` (ex.: turno que
+    termina em `requires_action`). Prioriza os args montados via `arguments_delta`.
+    """
+    resultado = []
+    for idx in sorted(chamadas):
+        c = chamadas[idx]
+        args = c["args"]
+        if c["args_str"]:
+            try:
+                args = json.loads(c["args_str"])
+            except ValueError:
+                args = c["args"]  # fragmentos ainda incompletos: fica com o inicial
+        resultado.append({"id": c["id"], "name": c["name"], "args": args})
+    return resultado
+
+
+def _conversar_stream(texto_usuario: str, modelo: str):
+    """Roda o loop de function calling em streaming, emitindo eventos de domínio.
+
+    Cada item gerado é um dict com uma chave "tipo":
+      {"tipo": "tool",     "nome": str, "argumentos": dict}   # tool prestes a rodar
+      {"tipo": "tool_fim", "nome": str, "erro": bool}         # tool concluída
+      {"tipo": "texto",    "delta": str}                      # pedaço da resposta
+      {"tipo": "erro",     "mensagem": str}                   # erro amigável (encerra)
+      {"tipo": "fim"}                                         # fim da resposta
+    """
+    logger.info("chamando Gemini em streaming (modelo=%s), input=%r", modelo, texto_usuario)
+    entrada = texto_usuario
+    previous_id = None
+    algum_texto = False
+
+    for _ in range(MAX_ITERACOES):
+        kwargs = {
+            "model": modelo,
+            "input": entrada,
+            "tools": TOOL_DECLARATIONS,
+            "stream": True,
+        }
+        if previous_id is None:
+            # system_instruction é interaction-scoped; no modo stateful o servidor
+            # mantém no thread, então só enviamos na 1ª chamada (alinha com a doc).
+            kwargs["system_instruction"] = SYSTEM_INSTRUCTION
+        else:
+            kwargs["previous_interaction_id"] = previous_id
+
+        try:
+            stream = client.interactions.create(**kwargs)
+        except Exception as exc:
+            if _e_erro_de_quota(exc):
+                logger.warning("cota do Gemini esgotada (429): %s", exc)
+                yield {"tipo": "erro", "mensagem": MENSAGEM_QUOTA}
+                return
+            raise
+
+        turno_id = previous_id
+        final = None
+        chamadas = {}  # index -> {"id", "name", "args", "args_str"}
+        try:
+            for ev in stream:
+                tipo = getattr(ev, "event_type", None)
+                if tipo == "interaction.created":
+                    turno_id = ev.interaction.id
+                elif tipo == "interaction.completed":
+                    final = ev.interaction
+                    turno_id = ev.interaction.id
+                elif tipo == "interaction.status_update":
+                    turno_id = ev.interaction_id or turno_id
+                elif tipo == "step.start":
+                    passo = ev.step
+                    if getattr(passo, "type", None) == "function_call":
+                        chamadas[ev.index] = {
+                            "id": passo.id,
+                            "name": passo.name,
+                            "args": dict(getattr(passo, "arguments", None) or {}),
+                            "args_str": "",
+                        }
+                elif tipo == "step.delta":
+                    delta = ev.delta
+                    dtipo = getattr(delta, "type", None)
+                    if dtipo == "text" and delta.text:
+                        algum_texto = True
+                        yield {"tipo": "texto", "delta": delta.text}
+                    elif dtipo == "arguments_delta":
+                        c = chamadas.get(ev.index)
+                        if c is not None and delta.arguments:
+                            c["args_str"] += delta.arguments
+                elif tipo == "error":
+                    detalhe = getattr(getattr(ev, "error", None), "message", None)
+                    logger.error("evento de erro no stream do Gemini: %s", detalhe)
+                    yield {"tipo": "erro", "mensagem": MENSAGEM_ERRO_GENERICO}
+                    return
+        except Exception as exc:
+            if _e_erro_de_quota(exc):
+                logger.warning("cota do Gemini esgotada (429) durante o stream: %s", exc)
+                yield {"tipo": "erro", "mensagem": MENSAGEM_QUOTA}
+                return
+            raise
+        finally:
+            stream.close()  # libera a conexão mesmo em erro/desconexão
+
+        # O stream é a fonte confiável das function calls: `step.start` entrega
+        # nome/id e os args chegam via `arguments_delta`. O evento
+        # `interaction.completed` de um turno `requires_action` costuma vir com
+        # `steps=None` mesmo havendo tool (era a causa do 502), então a interação
+        # completa só é usada como último recurso.
+        lista = _chamadas_acumuladas(chamadas)
+        if not lista and final is not None:
+            lista = _chamadas_da_interacao(final)
+
+        if not lista:
+            if not algum_texto:
+                yield {"tipo": "texto", "delta": MENSAGEM_SEM_RESPOSTA}
+            yield {"tipo": "fim"}
+            return
+
+        resultados = []
+        for c in lista:
+            yield {"tipo": "tool", "nome": c["name"], "argumentos": c["args"]}
+            retorno = _executar_tool(c["name"], c["args"] or {})
+            erro = isinstance(retorno, dict) and "erro" in retorno
+            yield {"tipo": "tool_fim", "nome": c["name"], "erro": erro}
+            resultados.append(
+                {
+                    "type": "function_result",
+                    "name": c["name"],
+                    "call_id": c["id"],
+                    "result": [
+                        {"type": "text", "text": json.dumps(retorno, ensure_ascii=False, default=str)}
+                    ],
+                }
+            )
+
+        entrada = resultados
+        previous_id = turno_id
+
+    # Esgotou MAX_ITERACOES sem uma resposta final em texto.
+    if not algum_texto:
+        yield {"tipo": "texto", "delta": MENSAGEM_SEM_RESPOSTA}
+    yield {"tipo": "fim"}
+
+
+def stream_agente(texto_usuario: str, modelo: str | None = None):
+    """Versão streaming (para o endpoint SSE): gera os eventos de domínio."""
+    return _conversar_stream(texto_usuario, _resolver_modelo(modelo))
+
+
 def executar_agente(texto_usuario: str, modelo: str | None = None) -> str:
-    """Converte o erro de cota do Gemini em mensagem amigável; o resto propaga."""
-    try:
-        return _conversar(texto_usuario, _resolver_modelo(modelo))
-    except Exception as exc:
-        if _e_erro_de_quota(exc):
-            logger.warning("cota do Gemini esgotada (429): %s", exc)
-            return MENSAGEM_QUOTA
-        raise  # erro inesperado -> chat.py devolve 502
+    """Drena o stream e devolve a resposta final em texto.
+
+    Converte o erro de cota do Gemini em mensagem amigável; erros inesperados
+    propagam (o chat.py devolve 502).
+    """
+    partes = []
+    for ev in _conversar_stream(texto_usuario, _resolver_modelo(modelo)):
+        if ev["tipo"] == "texto":
+            partes.append(ev["delta"])
+        elif ev["tipo"] == "erro":
+            return ev["mensagem"]
+    return "".join(partes) or MENSAGEM_SEM_RESPOSTA

@@ -38,3 +38,79 @@ export async function sendMessage(text, token, model) {
   }
   return res.json(); // { reply }
 }
+
+// Versão streaming (SSE) do envio de mensagem. Usa fetch + reader (não
+// EventSource, que não permite header Authorization) e vai chamando os callbacks
+// conforme os eventos do agente chegam em tempo real:
+//   onText(delta)            -> pedaço do texto da resposta
+//   onTool({ nome, argumentos }) -> uma tool prestes a rodar
+//   onToolFim({ nome, erro })    -> tool concluída (✓/⚠)
+//   onErro(mensagem)         -> erro amigável (encerra)
+//   onFim()                  -> fim da resposta
+export async function sendMessageStream(text, token, model, handlers = {}) {
+  const { onText, onTool, onToolFim, onErro, onFim } = handlers;
+
+  const res = await fetch(`${API_URL}/api/message/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ text, model: model || undefined }),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error("Falha ao enviar mensagem");
+  }
+
+  const processarBloco = (bloco) => {
+    // Um bloco SSE pode ter várias linhas; junta o conteúdo das linhas "data:".
+    const dados = bloco
+      .split("\n")
+      .filter((l) => l.startsWith("data:"))
+      .map((l) => l.slice(5).trim())
+      .join("");
+    if (!dados) return;
+    let ev;
+    try {
+      ev = JSON.parse(dados);
+    } catch {
+      return; // ruído/bloco incompleto: ignora
+    }
+    switch (ev.tipo) {
+      case "texto":
+        onText?.(ev.delta || "");
+        break;
+      case "tool":
+        onTool?.({ nome: ev.nome, argumentos: ev.argumentos || {} });
+        break;
+      case "tool_fim":
+        onToolFim?.({ nome: ev.nome, erro: !!ev.erro });
+        break;
+      case "erro":
+        onErro?.(ev.mensagem || "Erro ao consultar o Gemini.");
+        break;
+      case "fim":
+        onFim?.();
+        break;
+      default:
+        break;
+    }
+  };
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep;
+    while ((sep = buffer.indexOf("\n\n")) !== -1) {
+      const bloco = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      processarBloco(bloco);
+    }
+  }
+  // resto sem "\n\n" final
+  if (buffer.trim()) processarBloco(buffer);
+}
