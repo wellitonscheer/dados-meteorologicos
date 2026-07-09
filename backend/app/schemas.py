@@ -14,6 +14,7 @@ class TokenOut(BaseModel):
 
 class MessageIn(BaseModel):
     text: str
+    model: str | None = None  # id do modelo Gemini escolhido; None = usa o padrão
 
 
 class MessageOut(BaseModel):

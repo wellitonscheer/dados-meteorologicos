@@ -10,7 +10,19 @@ from .tools import TOOL_DECLARATIONS, TOOL_FUNCTIONS
 client = genai.Client()  # lê GEMINI_API_KEY do ambiente automaticamente
 logger = logging.getLogger("app.agent")
 
-MODEL = "gemini-2.5-flash"
+# Modelos que o usuário pode escolher no chat. O id é o nome exato do modelo na
+# API do Gemini (confirmado na doc oficial); o label é o que aparece na tela.
+# "Gemini 3 Flash" só existe como preview (não ganhou id estável).
+MODELOS_DISPONIVEIS = [
+    {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash"},
+    {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
+    {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite"},
+    {"id": "gemini-3-flash-preview", "label": "Gemini 3 Flash"},
+    {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
+]
+MODELO_PADRAO = "gemini-2.5-flash"
+_MODELOS_VALIDOS = {m["id"] for m in MODELOS_DISPONIVEIS}
+
 MAX_ITERACOES = 5  # evita loop infinito de function calls
 
 MENSAGEM_QUOTA = (
@@ -44,11 +56,20 @@ def _executar_tool(nome: str, argumentos: dict) -> str:
     return json.dumps(retorno, ensure_ascii=False, default=str)
 
 
-def _conversar(texto_usuario: str) -> str:
+def _resolver_modelo(modelo: str | None) -> str:
+    """Aceita só modelos da allowlist; qualquer outro cai no padrão."""
+    if modelo in _MODELOS_VALIDOS:
+        return modelo
+    if modelo:
+        logger.warning("modelo desconhecido %r; usando padrão %s", modelo, MODELO_PADRAO)
+    return MODELO_PADRAO
+
+
+def _conversar(texto_usuario: str, modelo: str) -> str:
     """Roda o loop de function calling e retorna a resposta final em texto."""
-    logger.info("chamando Gemini (modelo=%s), input=%r", MODEL, texto_usuario)
+    logger.info("chamando Gemini (modelo=%s), input=%r", modelo, texto_usuario)
     interaction = client.interactions.create(
-        model=MODEL,
+        model=modelo,
         input=texto_usuario,
         tools=TOOL_DECLARATIONS,
         system_instruction=SYSTEM_INSTRUCTION,
@@ -72,7 +93,7 @@ def _conversar(texto_usuario: str) -> str:
             for chamada in chamadas
         ]
         interaction = client.interactions.create(
-            model=MODEL,
+            model=modelo,
             previous_interaction_id=interaction.id,
             tools=TOOL_DECLARATIONS,
             input=resultados,
@@ -91,10 +112,10 @@ def _e_erro_de_quota(exc: Exception) -> bool:
     return any(t in texto for t in ("429", "resource_exhausted", "quota", "too_many_requests"))
 
 
-def executar_agente(texto_usuario: str) -> str:
+def executar_agente(texto_usuario: str, modelo: str | None = None) -> str:
     """Converte o erro de cota do Gemini em mensagem amigável; o resto propaga."""
     try:
-        return _conversar(texto_usuario)
+        return _conversar(texto_usuario, _resolver_modelo(modelo))
     except Exception as exc:
         if _e_erro_de_quota(exc):
             logger.warning("cota do Gemini esgotada (429): %s", exc)

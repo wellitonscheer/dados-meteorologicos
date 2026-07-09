@@ -13,14 +13,25 @@ export async function login(username, password) {
   return res.json(); // { access_token, token_type, username }
 }
 
-export async function sendMessage(text, token) {
+export async function getModels(token) {
+  const res = await fetch(`${API_URL}/api/models`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error("Falha ao carregar modelos");
+  }
+  return res.json(); // { models: [{ id, label }], default }
+}
+
+export async function sendMessage(text, token, model) {
   const res = await fetch(`${API_URL}/api/message`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ text }),
+    // model vazio/undefined é omitido -> backend usa o modelo padrão
+    body: JSON.stringify({ text, model: model || undefined }),
   });
   if (!res.ok) {
     throw new Error("Falha ao enviar mensagem");
