@@ -1,5 +1,6 @@
 """Loop do agente: conversa com o Gemini executando tools (function calling)."""
 import json
+import logging
 
 from google import genai
 
@@ -7,6 +8,7 @@ from .config import GOOGLE_SHEETS_SPREADSHEET_NAME
 from .tools import TOOL_DECLARATIONS, TOOL_FUNCTIONS
 
 client = genai.Client()  # lê GEMINI_API_KEY do ambiente automaticamente
+logger = logging.getLogger("app.agent")
 
 MODEL = "gemini-2.5-flash"
 MAX_ITERACOES = 5  # evita loop infinito de function calls
@@ -25,7 +27,7 @@ SYSTEM_INSTRUCTION = (
 
 
 def _executar_tool(nome: str, argumentos: dict) -> str:
-    print(f"[agente] executando tool {nome} com argumentos {argumentos}")
+    logger.info("executando tool %s com argumentos %s", nome, argumentos)
     funcao = TOOL_FUNCTIONS.get(nome)
     if funcao is None:
         retorno = {"erro": f"Tool desconhecida: {nome}"}
@@ -39,6 +41,7 @@ def _executar_tool(nome: str, argumentos: dict) -> str:
 
 def executar_agente(texto_usuario: str) -> str:
     """Roda o loop de function calling e retorna a resposta final em texto."""
+    logger.info("chamando Gemini (modelo=%s), input=%r", MODEL, texto_usuario)
     interaction = client.interactions.create(
         model=MODEL,
         input=texto_usuario,
