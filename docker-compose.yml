@@ -25,7 +25,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
       SEED_USERNAME: ${SEED_USERNAME:-admin}
       SEED_PASSWORD: ${SEED_PASSWORD:-admin}
-      FRONTEND_ORIGIN: http://localhost:5173
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GOOGLE_SHEETS_CREDENTIALS_FILE: /secrets/google-service-account.json
       GOOGLE_SHEETS_SPREADSHEET_NAME: "Dados Climáticos por Produtor"
@@ -47,7 +47,8 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_URL: http://localhost:8000
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      VITE_ALLOWED_HOSTS: ${VITE_ALLOWED_HOSTS:-}
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./frontend:/app
