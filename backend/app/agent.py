@@ -80,7 +80,7 @@ SYSTEM_INSTRUCTION = (
     "(próximos compromissos: título, início, fim, local). Combine as tools "
     "quando fizer sentido. Só afirme dados que vieram das tools; se uma tool "
     "retornar 'erro', explique o problema ao usuário em linguagem simples. "
-    "Responda sempre em português e em texto simples."
+    "Responda sempre em português."
 )
 
 FUSO = ZoneInfo("America/Sao_Paulo")  # mesmo fuso das tools (previsão/agenda)
