@@ -9,6 +9,8 @@ os pedaços do texto final. Dois consumidores usam o mesmo núcleo:
 """
 import json
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from google import genai
 
@@ -78,8 +80,31 @@ SYSTEM_INSTRUCTION = (
     "(próximos compromissos: título, início, fim, local). Combine as tools "
     "quando fizer sentido. Só afirme dados que vieram das tools; se uma tool "
     "retornar 'erro', explique o problema ao usuário em linguagem simples. "
-    "Responda sempre em português e em texto simples"
+    "Responda sempre em português e em texto simples."
 )
+
+FUSO = ZoneInfo("America/Sao_Paulo")  # mesmo fuso das tools (previsão/agenda)
+_DIAS_SEMANA = (
+    "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
+    "sexta-feira", "sábado", "domingo",
+)
+_MESES = (
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+)
+
+
+def _contexto_atual() -> str:
+    """Frase com a data/hora atual, calculada a cada mensagem — dá ao modelo a
+    referência para 'hoje', 'amanhã', 'fim de semana' etc. Os nomes em PT ficam
+    em tuplas porque o locale pt_BR não é garantido no container."""
+    agora = datetime.now(FUSO)
+    return (
+        f"Contexto atual: agora são {agora.hour}h{agora.minute:02d} de "
+        f"{_DIAS_SEMANA[agora.weekday()]}, {agora.day} de "
+        f"{_MESES[agora.month - 1]} de {agora.year}, no fuso {FUSO} "
+        "(horário de Brasília)."
+    )
 
 
 def _executar_tool(nome: str, argumentos: dict):
@@ -199,7 +224,7 @@ def _conversar_stream(texto_usuario: str, modelo: str, historico=None):
         if previous_id is None:
             # system_instruction é interaction-scoped; no modo stateful o servidor
             # mantém no thread, então só enviamos na 1ª chamada (alinha com a doc).
-            kwargs["system_instruction"] = SYSTEM_INSTRUCTION
+            kwargs["system_instruction"] = f"{SYSTEM_INSTRUCTION} {_contexto_atual()}"
         else:
             kwargs["previous_interaction_id"] = previous_id
 
