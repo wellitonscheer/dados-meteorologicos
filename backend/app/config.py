@@ -32,6 +32,18 @@ GOOGLE_SHEETS_SPREADSHEET_NAME = os.getenv(
 # não precisar descobri-lo — evita uma chamada extra ao modelo por consulta.
 GOOGLE_SHEETS_WORKSHEET_NAME = os.getenv("GOOGLE_SHEETS_WORKSHEET_NAME", "Sheet1")
 
+# Segunda planilha: produtores e suas propriedades (dados cadastrais, cultura e
+# coordenadas exatas). Usa a MESMA conta de serviço/credencial da planilha de
+# clima — a planilha precisa estar compartilhada com essa conta.
+GOOGLE_SHEETS_PROPRIEDADES_SPREADSHEET_NAME = os.getenv(
+    "GOOGLE_SHEETS_PROPRIEDADES_SPREADSHEET_NAME",
+    "Produtores Propriedades",
+)
+GOOGLE_SHEETS_PROPRIEDADES_WORKSHEET_NAME = os.getenv(
+    "GOOGLE_SHEETS_PROPRIEDADES_WORKSHEET_NAME",
+    "Sheet1",
+)
+
 # Chave da Point Forecast API do Windy (tool de previsão do tempo).
 WINDY_API_KEY = os.getenv("WINDY_API_KEY", "")
 

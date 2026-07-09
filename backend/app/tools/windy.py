@@ -151,9 +151,8 @@ DECLARATIONS = [
             "e ponto de orvalho. Útil para decisões do produtor rural: risco de "
             "geada (temperatura e ponto de orvalho baixos), janela de "
             "pulverização (vento e umidade), doenças fúngicas (umidade alta) e "
-            "janela de plantio/colheita (chuva). Se o usuário citar um produtor, "
-            "descubra a cidade dele na planilha e use as coordenadas aproximadas "
-            "dessa cidade."
+            "janela de plantio/colheita (chuva). Requer a latitude e a longitude "
+            "do ponto em graus decimais."
         ),
         "parameters": {
             "type": "object",
