@@ -32,8 +32,8 @@ MENSAGEM_QUOTA = (
 
 SYSTEM_INSTRUCTION = (
     "Você é um assistente de dados meteorológicos para produtores rurais. "
-    f"Você tem acesso à planilha '{GOOGLE_SHEETS_SPREADSHEET_NAME}' pelas tools "
-    "listar_abas e ler_registros, à previsão do tempo por coordenada pela tool "
+    f"Você tem acesso à planilha '{GOOGLE_SHEETS_SPREADSHEET_NAME}' pela tool "
+    "ler_registros, à previsão do tempo por coordenada pela tool "
     "previsao_tempo, e à agenda do Google Calendar pela tool listar_eventos "
     "(próximos compromissos: título, início, fim, local) — combine-as quando "
     "fizer sentido (ex.: localizar o produtor "
@@ -92,10 +92,16 @@ def _conversar(texto_usuario: str, modelo: str) -> str:
             }
             for chamada in chamadas
         ]
+        # tools e system_instruction são interaction-scoped na Interactions API:
+        # precisam ser reenviados a cada chamada para valerem. Sem o
+        # system_instruction aqui, o guardrail "só dados das tools / português"
+        # não se aplicaria justamente no turno que redige a resposta final.
+        # Custo ~zero: em modo stateful o prefixo estável entra no cache implícito.
         interaction = client.interactions.create(
             model=modelo,
             previous_interaction_id=interaction.id,
             tools=TOOL_DECLARATIONS,
+            system_instruction=SYSTEM_INSTRUCTION,
             input=resultados,
         )
     return interaction.output_text or (

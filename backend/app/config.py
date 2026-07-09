@@ -28,6 +28,9 @@ GOOGLE_SHEETS_SPREADSHEET_NAME = os.getenv(
     "GOOGLE_SHEETS_SPREADSHEET_NAME",
     "Dados Climáticos por Produtor",
 )
+# Nome da aba (worksheet) lida pelo agente. Fixo por configuração para o modelo
+# não precisar descobri-lo — evita uma chamada extra ao modelo por consulta.
+GOOGLE_SHEETS_WORKSHEET_NAME = os.getenv("GOOGLE_SHEETS_WORKSHEET_NAME", "Sheet1")
 
 # Chave da Point Forecast API do Windy (tool de previsão do tempo).
 WINDY_API_KEY = os.getenv("WINDY_API_KEY", "")
