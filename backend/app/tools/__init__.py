@@ -11,17 +11,19 @@ Contrato de cada módulo de tool:
 Para adicionar uma tool nova: criar o módulo com DECLARATIONS/FUNCTIONS e
 somá-lo nas linhas abaixo (nomes de função precisam ser únicos entre módulos).
 """
-from . import calendar_agenda, propriedades, sheets, windy
+from . import calendar_agenda, geocodificacao, propriedades, sheets, windy
 
 TOOL_DECLARATIONS = [
     *sheets.DECLARATIONS,
     *propriedades.DECLARATIONS,
+    *geocodificacao.DECLARATIONS,
     *windy.DECLARATIONS,
     *calendar_agenda.DECLARATIONS,
 ]
 TOOL_FUNCTIONS = {
     **sheets.FUNCTIONS,
     **propriedades.FUNCTIONS,
+    **geocodificacao.FUNCTIONS,
     **windy.FUNCTIONS,
     **calendar_agenda.FUNCTIONS,
 }

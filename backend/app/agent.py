@@ -31,7 +31,7 @@ MODELOS_DISPONIVEIS = [
 MODELO_PADRAO = "gemini-2.5-flash"
 _MODELOS_VALIDOS = {m["id"] for m in MODELOS_DISPONIVEIS}
 
-MAX_ITERACOES = 5  # evita loop infinito de function calls
+MAX_ITERACOES = 5  # rodadas com tools; depois vem 1 rodada de fechamento sem tools
 
 MENSAGEM_QUOTA = (
     "Estou sem cota da API do Gemini no momento (limite de uso atingido). "
@@ -47,6 +47,23 @@ MENSAGEM_ERRO_GENERICO = (
     "Ocorreu um erro ao consultar o Gemini. Tente novamente em instantes."
 )
 
+# Turno de texto acrescentado aos resultados de tool na rodada de fechamento.
+# Só omitir as tools não basta: o modelo ainda tenta function calls (chega a
+# inventar nomes de tool); com este aviso ele responde em texto com o que tem.
+AVISO_FECHAMENTO = {
+    "type": "user_input",
+    "content": [
+        {
+            "type": "text",
+            "text": (
+                "O limite de chamadas de tools desta resposta foi atingido. "
+                "Responda agora com as informações que você já tem, "
+                "explicando o que faltou."
+            ),
+        }
+    ],
+}
+
 SYSTEM_INSTRUCTION = (
     "Você é um assistente de dados meteorológicos para produtores rurais. "
     f"Você tem acesso à planilha '{GOOGLE_SHEETS_SPREADSHEET_NAME}' por duas "
@@ -55,7 +72,9 @@ SYSTEM_INSTRUCTION = (
     "segunda planilha com os produtores e suas propriedades pela tool "
     "buscar_propriedades (dados cadastrais, cultura e coordenadas geográficas "
     "exatas de cada propriedade), à previsão do tempo por coordenada pela tool "
-    "previsao_tempo, e à agenda do Google Calendar pela tool listar_eventos "
+    "previsao_tempo, à geocodificação de nomes de lugares pela tool "
+    "geocodificar_local (nome de cidade/localidade → coordenadas), e à agenda "
+    "do Google Calendar pela tool listar_eventos "
     "(próximos compromissos: título, início, fim, local). Combine as tools "
     "quando fizer sentido. Só afirme dados que vieram das tools; se uma tool "
     "retornar 'erro', explique o problema ao usuário em linguagem simples. "
@@ -162,13 +181,21 @@ def _conversar_stream(texto_usuario: str, modelo: str, historico=None):
     previous_id = None
     algum_texto = False
 
-    for _ in range(MAX_ITERACOES):
+    for rodada in range(MAX_ITERACOES + 1):
+        # A rodada extra é a de fechamento: os resultados da última rodada de
+        # tools (que antes eram descartados) seguem para o modelo com o aviso
+        # de limite atingido, e as tools não são reenviadas (`tools` é
+        # interaction-scoped), para a resposta sair em texto.
+        fechamento = rodada == MAX_ITERACOES
+        if fechamento:
+            entrada = [*entrada, AVISO_FECHAMENTO]
         kwargs = {
             "model": modelo,
             "input": entrada,
-            "tools": TOOL_DECLARATIONS,
             "stream": True,
         }
+        if not fechamento:
+            kwargs["tools"] = TOOL_DECLARATIONS
         if previous_id is None:
             # system_instruction é interaction-scoped; no modo stateful o servidor
             # mantém no thread, então só enviamos na 1ª chamada (alinha com a doc).
@@ -240,7 +267,9 @@ def _conversar_stream(texto_usuario: str, modelo: str, historico=None):
         if not lista and final is not None:
             lista = _chamadas_da_interacao(final)
 
-        if not lista:
+        # Na rodada de fechamento não há tools declaradas, então qualquer
+        # function call remanescente é ignorada e a resposta é o texto emitido.
+        if fechamento or not lista:
             if not algum_texto:
                 yield {"tipo": "texto", "delta": MENSAGEM_SEM_RESPOSTA}
             yield {"tipo": "fim"}
@@ -265,11 +294,6 @@ def _conversar_stream(texto_usuario: str, modelo: str, historico=None):
 
         entrada = resultados
         previous_id = turno_id
-
-    # Esgotou MAX_ITERACOES sem uma resposta final em texto.
-    if not algum_texto:
-        yield {"tipo": "texto", "delta": MENSAGEM_SEM_RESPOSTA}
-    yield {"tipo": "fim"}
 
 
 def stream_agente(texto_usuario: str, modelo: str | None = None, historico=None):
