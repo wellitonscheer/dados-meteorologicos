@@ -61,10 +61,6 @@ export default function Login({ onLogin }) {
         >
           {loading ? "Entrando..." : "Entrar"}
         </button>
-
-        <p className="text-xs text-slate-400 text-center">
-          Usuário padrão: admin / admin
-        </p>
       </form>
     </div>
   );
