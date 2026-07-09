@@ -1,4 +1,12 @@
-"""Loop do agente: conversa com o Gemini executando tools (function calling)."""
+"""Loop do agente: conversa com o Gemini executando tools (function calling).
+
+O loop roda em modo *streaming* (Interactions API, `stream=True`) e emite
+"eventos de domínio" (dicts) enquanto acontece: tools chamadas (nome + args) e
+os pedaços do texto final. Dois consumidores usam o mesmo núcleo:
+- `stream_agente` -> alimenta o endpoint SSE (chat ao vivo);
+- `executar_agente` -> drena o gerador e devolve a string final (endpoint
+  clássico `/api/message` e usos não-streaming).
+"""
 import json
 import logging
 
@@ -23,37 +31,71 @@ MODELOS_DISPONIVEIS = [
 MODELO_PADRAO = "gemini-2.5-flash"
 _MODELOS_VALIDOS = {m["id"] for m in MODELOS_DISPONIVEIS}
 
-MAX_ITERACOES = 5  # evita loop infinito de function calls
+MAX_ITERACOES = 5  # rodadas com tools; depois vem 1 rodada de fechamento sem tools
 
 MENSAGEM_QUOTA = (
     "Estou sem cota da API do Gemini no momento (limite de uso atingido). "
     "Tente novamente daqui a alguns minutos."
 )
 
+MENSAGEM_SEM_RESPOSTA = (
+    "Não consegui concluir a consulta dentro do limite de etapas. "
+    "Tente reformular a pergunta."
+)
+
+MENSAGEM_ERRO_GENERICO = (
+    "Ocorreu um erro ao consultar o Gemini. Tente novamente em instantes."
+)
+
+# Turno de texto acrescentado aos resultados de tool na rodada de fechamento.
+# Só omitir as tools não basta: o modelo ainda tenta function calls (chega a
+# inventar nomes de tool); com este aviso ele responde em texto com o que tem.
+AVISO_FECHAMENTO = {
+    "type": "user_input",
+    "content": [
+        {
+            "type": "text",
+            "text": (
+                "O limite de chamadas de tools desta resposta foi atingido. "
+                "Responda agora com as informações que você já tem, "
+                "explicando o que faltou."
+            ),
+        }
+    ],
+}
+
 SYSTEM_INSTRUCTION = (
     "Você é um assistente de dados meteorológicos para produtores rurais. "
-    f"Você tem acesso à planilha '{GOOGLE_SHEETS_SPREADSHEET_NAME}' pela tool "
-    "ler_registros, à previsão do tempo por coordenada pela tool "
-    "previsao_tempo, e à agenda do Google Calendar pela tool listar_eventos "
-    "(próximos compromissos: título, início, fim, local) — combine-as quando "
-    "fizer sentido (ex.: localizar o produtor "
-    "na planilha e prever o tempo para a região dele). Só afirme dados que vieram "
-    "das tools; se uma tool retornar 'erro', explique o problema ao usuário em "
-    "linguagem simples. Responda sempre em português e em texto simples"
+    f"Você tem acesso à planilha '{GOOGLE_SHEETS_SPREADSHEET_NAME}' por duas "
+    "tools — buscar_registros (filtra a planilha por um termo e devolve só os "
+    "registros que casam) e ler_registros (lista a planilha inteira) —, a uma "
+    "segunda planilha com os produtores e suas propriedades pela tool "
+    "buscar_propriedades (dados cadastrais, cultura e coordenadas geográficas "
+    "exatas de cada propriedade), à previsão do tempo por coordenada pela tool "
+    "previsao_tempo, à geocodificação de nomes de lugares pela tool "
+    "geocodificar_local (nome de cidade/localidade → coordenadas), e à agenda "
+    "do Google Calendar pela tool listar_eventos "
+    "(próximos compromissos: título, início, fim, local). Combine as tools "
+    "quando fizer sentido. Só afirme dados que vieram das tools; se uma tool "
+    "retornar 'erro', explique o problema ao usuário em linguagem simples. "
+    "Responda sempre em português e em texto simples"
 )
 
 
-def _executar_tool(nome: str, argumentos: dict) -> str:
+def _executar_tool(nome: str, argumentos: dict):
+    """Executa a tool e devolve o objeto de retorno (serializável em JSON).
+
+    Erros esperados/ inesperados viram `{"erro": "..."}` para o modelo explicar
+    ao usuário; nunca levanta exceção.
+    """
     logger.info("executando tool %s com argumentos %s", nome, argumentos)
     funcao = TOOL_FUNCTIONS.get(nome)
     if funcao is None:
-        retorno = {"erro": f"Tool desconhecida: {nome}"}
-    else:
-        try:
-            retorno = funcao(**argumentos)
-        except Exception as exc:  # erro inesperado vira resultado p/ o modelo explicar
-            retorno = {"erro": f"Falha ao executar a tool {nome}: {exc}"}
-    return json.dumps(retorno, ensure_ascii=False, default=str)
+        return {"erro": f"Tool desconhecida: {nome}"}
+    try:
+        return funcao(**argumentos)
+    except Exception as exc:  # erro inesperado vira resultado p/ o modelo explicar
+        return {"erro": f"Falha ao executar a tool {nome}: {exc}"}
 
 
 def _resolver_modelo(modelo: str | None) -> str:
@@ -65,51 +107,6 @@ def _resolver_modelo(modelo: str | None) -> str:
     return MODELO_PADRAO
 
 
-def _conversar(texto_usuario: str, modelo: str) -> str:
-    """Roda o loop de function calling e retorna a resposta final em texto."""
-    logger.info("chamando Gemini (modelo=%s), input=%r", modelo, texto_usuario)
-    interaction = client.interactions.create(
-        model=modelo,
-        input=texto_usuario,
-        tools=TOOL_DECLARATIONS,
-        system_instruction=SYSTEM_INSTRUCTION,
-    )
-    for _ in range(MAX_ITERACOES):
-        chamadas = [s for s in interaction.steps if s.type == "function_call"]
-        if not chamadas:
-            break
-        resultados = [
-            {
-                "type": "function_result",
-                "name": chamada.name,
-                "call_id": chamada.id,
-                "result": [
-                    {
-                        "type": "text",
-                        "text": _executar_tool(chamada.name, chamada.arguments or {}),
-                    }
-                ],
-            }
-            for chamada in chamadas
-        ]
-        # tools e system_instruction são interaction-scoped na Interactions API:
-        # precisam ser reenviados a cada chamada para valerem. Sem o
-        # system_instruction aqui, o guardrail "só dados das tools / português"
-        # não se aplicaria justamente no turno que redige a resposta final.
-        # Custo ~zero: em modo stateful o prefixo estável entra no cache implícito.
-        interaction = client.interactions.create(
-            model=modelo,
-            previous_interaction_id=interaction.id,
-            tools=TOOL_DECLARATIONS,
-            system_instruction=SYSTEM_INSTRUCTION,
-            input=resultados,
-        )
-    return interaction.output_text or (
-        "Não consegui concluir a consulta dentro do limite de etapas. "
-        "Tente reformular a pergunta."
-    )
-
-
 def _e_erro_de_quota(exc: Exception) -> bool:
     """Reconhece o erro de cota (429) do Gemini sem depender da classe privada do SDK."""
     if getattr(exc, "status_code", None) == 429:
@@ -118,12 +115,202 @@ def _e_erro_de_quota(exc: Exception) -> bool:
     return any(t in texto for t in ("429", "resource_exhausted", "quota", "too_many_requests"))
 
 
-def executar_agente(texto_usuario: str, modelo: str | None = None) -> str:
-    """Converte o erro de cota do Gemini em mensagem amigável; o resto propaga."""
-    try:
-        return _conversar(texto_usuario, _resolver_modelo(modelo))
-    except Exception as exc:
-        if _e_erro_de_quota(exc):
-            logger.warning("cota do Gemini esgotada (429): %s", exc)
-            return MENSAGEM_QUOTA
-        raise  # erro inesperado -> chat.py devolve 502
+def _chamadas_da_interacao(final):
+    """Extrai as function calls de uma interação completa (fonte autoritativa)."""
+    passos = getattr(final, "steps", None) or []
+    return [
+        {"id": s.id, "name": s.name, "args": dict(getattr(s, "arguments", None) or {})}
+        for s in passos
+        if getattr(s, "type", None) == "function_call"
+    ]
+
+
+def _chamadas_acumuladas(chamadas: dict):
+    """Reconstrói as function calls a partir do que foi acumulado no stream.
+
+    Usado quando não veio o evento `interaction.completed` (ex.: turno que
+    termina em `requires_action`). Prioriza os args montados via `arguments_delta`.
+    """
+    resultado = []
+    for idx in sorted(chamadas):
+        c = chamadas[idx]
+        args = c["args"]
+        if c["args_str"]:
+            try:
+                args = json.loads(c["args_str"])
+            except ValueError:
+                args = c["args"]  # fragmentos ainda incompletos: fica com o inicial
+        resultado.append({"id": c["id"], "name": c["name"], "args": args})
+    return resultado
+
+
+def _montar_entrada(historico, texto_usuario: str):
+    """Monta o `input` da 1ª chamada ao Gemini a partir do histórico da conversa.
+
+    Sem histórico, devolve a string da mensagem atual (comportamento de sempre).
+    Com histórico, devolve a lista de turnos (`user_input` / `model_output`) seguida
+    da mensagem atual — assim o modelo recebe o contexto completo da conversa. Os
+    shapes seguem a Interactions API; turnos de histórico não exigem ids. Trocar por
+    um preâmbulo de texto (caso a API rejeite os turnos) é uma mudança só aqui.
+    """
+    if not historico:
+        return texto_usuario
+    entrada = []
+    for h in historico:
+        tipo = "user_input" if h.role == "user" else "model_output"
+        entrada.append({"type": tipo, "content": [{"type": "text", "text": h.text}]})
+    entrada.append({"type": "user_input", "content": [{"type": "text", "text": texto_usuario}]})
+    return entrada
+
+
+def _conversar_stream(texto_usuario: str, modelo: str, historico=None):
+    """Roda o loop de function calling em streaming, emitindo eventos de domínio.
+
+    Cada item gerado é um dict com uma chave "tipo":
+      {"tipo": "tool",     "nome": str, "argumentos": dict}   # tool prestes a rodar
+      {"tipo": "tool_fim", "nome": str, "erro": bool}         # tool concluída
+      {"tipo": "texto",    "delta": str}                      # pedaço da resposta
+      {"tipo": "erro",     "mensagem": str}                   # erro amigável (encerra)
+      {"tipo": "fim"}                                         # fim da resposta
+    """
+    logger.info(
+        "chamando Gemini em streaming (modelo=%s, turnos_historico=%d), input=%r",
+        modelo, len(historico or []), texto_usuario,
+    )
+    entrada = _montar_entrada(historico, texto_usuario)
+    previous_id = None
+    algum_texto = False
+
+    for rodada in range(MAX_ITERACOES + 1):
+        # A rodada extra é a de fechamento: os resultados da última rodada de
+        # tools (que antes eram descartados) seguem para o modelo com o aviso
+        # de limite atingido, e as tools não são reenviadas (`tools` é
+        # interaction-scoped), para a resposta sair em texto.
+        fechamento = rodada == MAX_ITERACOES
+        if fechamento:
+            entrada = [*entrada, AVISO_FECHAMENTO]
+        kwargs = {
+            "model": modelo,
+            "input": entrada,
+            "stream": True,
+        }
+        if not fechamento:
+            kwargs["tools"] = TOOL_DECLARATIONS
+        if previous_id is None:
+            # system_instruction é interaction-scoped; no modo stateful o servidor
+            # mantém no thread, então só enviamos na 1ª chamada (alinha com a doc).
+            kwargs["system_instruction"] = SYSTEM_INSTRUCTION
+        else:
+            kwargs["previous_interaction_id"] = previous_id
+
+        try:
+            stream = client.interactions.create(**kwargs)
+        except Exception as exc:
+            if _e_erro_de_quota(exc):
+                logger.warning("cota do Gemini esgotada (429): %s", exc)
+                yield {"tipo": "erro", "mensagem": MENSAGEM_QUOTA}
+                return
+            raise
+
+        turno_id = previous_id
+        final = None
+        chamadas = {}  # index -> {"id", "name", "args", "args_str"}
+        try:
+            for ev in stream:
+                tipo = getattr(ev, "event_type", None)
+                if tipo == "interaction.created":
+                    turno_id = ev.interaction.id
+                elif tipo == "interaction.completed":
+                    final = ev.interaction
+                    turno_id = ev.interaction.id
+                elif tipo == "interaction.status_update":
+                    turno_id = ev.interaction_id or turno_id
+                elif tipo == "step.start":
+                    passo = ev.step
+                    if getattr(passo, "type", None) == "function_call":
+                        chamadas[ev.index] = {
+                            "id": passo.id,
+                            "name": passo.name,
+                            "args": dict(getattr(passo, "arguments", None) or {}),
+                            "args_str": "",
+                        }
+                elif tipo == "step.delta":
+                    delta = ev.delta
+                    dtipo = getattr(delta, "type", None)
+                    if dtipo == "text" and delta.text:
+                        algum_texto = True
+                        yield {"tipo": "texto", "delta": delta.text}
+                    elif dtipo == "arguments_delta":
+                        c = chamadas.get(ev.index)
+                        if c is not None and delta.arguments:
+                            c["args_str"] += delta.arguments
+                elif tipo == "error":
+                    detalhe = getattr(getattr(ev, "error", None), "message", None)
+                    logger.error("evento de erro no stream do Gemini: %s", detalhe)
+                    yield {"tipo": "erro", "mensagem": MENSAGEM_ERRO_GENERICO}
+                    return
+        except Exception as exc:
+            if _e_erro_de_quota(exc):
+                logger.warning("cota do Gemini esgotada (429) durante o stream: %s", exc)
+                yield {"tipo": "erro", "mensagem": MENSAGEM_QUOTA}
+                return
+            raise
+        finally:
+            stream.close()  # libera a conexão mesmo em erro/desconexão
+
+        # O stream é a fonte confiável das function calls: `step.start` entrega
+        # nome/id e os args chegam via `arguments_delta`. O evento
+        # `interaction.completed` de um turno `requires_action` costuma vir com
+        # `steps=None` mesmo havendo tool (era a causa do 502), então a interação
+        # completa só é usada como último recurso.
+        lista = _chamadas_acumuladas(chamadas)
+        if not lista and final is not None:
+            lista = _chamadas_da_interacao(final)
+
+        # Na rodada de fechamento não há tools declaradas, então qualquer
+        # function call remanescente é ignorada e a resposta é o texto emitido.
+        if fechamento or not lista:
+            if not algum_texto:
+                yield {"tipo": "texto", "delta": MENSAGEM_SEM_RESPOSTA}
+            yield {"tipo": "fim"}
+            return
+
+        resultados = []
+        for c in lista:
+            yield {"tipo": "tool", "nome": c["name"], "argumentos": c["args"]}
+            retorno = _executar_tool(c["name"], c["args"] or {})
+            erro = isinstance(retorno, dict) and "erro" in retorno
+            yield {"tipo": "tool_fim", "nome": c["name"], "erro": erro}
+            resultados.append(
+                {
+                    "type": "function_result",
+                    "name": c["name"],
+                    "call_id": c["id"],
+                    "result": [
+                        {"type": "text", "text": json.dumps(retorno, ensure_ascii=False, default=str)}
+                    ],
+                }
+            )
+
+        entrada = resultados
+        previous_id = turno_id
+
+
+def stream_agente(texto_usuario: str, modelo: str | None = None, historico=None):
+    """Versão streaming (para o endpoint SSE): gera os eventos de domínio."""
+    return _conversar_stream(texto_usuario, _resolver_modelo(modelo), historico)
+
+
+def executar_agente(texto_usuario: str, modelo: str | None = None, historico=None) -> str:
+    """Drena o stream e devolve a resposta final em texto.
+
+    Converte o erro de cota do Gemini em mensagem amigável; erros inesperados
+    propagam (o chat.py devolve 502).
+    """
+    partes = []
+    for ev in _conversar_stream(texto_usuario, _resolver_modelo(modelo), historico):
+        if ev["tipo"] == "texto":
+            partes.append(ev["delta"])
+        elif ev["tipo"] == "erro":
+            return ev["mensagem"]
+    return "".join(partes) or MENSAGEM_SEM_RESPOSTA

@@ -1,5 +1,18 @@
 import { useState, useEffect, useRef } from "react";
-import { getModels, sendMessage } from "../api.js";
+import { getModels, sendMessageStream } from "../api.js";
+
+// Formata os argumentos de uma tool de forma compacta: k=v, k=v
+function formatVal(v) {
+  if (typeof v === "string") return v.length > 24 ? `${v.slice(0, 24)}…` : v;
+  if (v && typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+function formatArgs(args) {
+  if (!args || typeof args !== "object") return "";
+  return Object.entries(args)
+    .map(([k, v]) => `${k}=${formatVal(v)}`)
+    .join(", ");
+}
 
 export default function Home({ auth, onLogout }) {
   const [messages, setMessages] = useState([]);
@@ -25,20 +38,78 @@ export default function Home({ auth, onLogout }) {
       });
   }, [auth.token]);
 
+  // Atualiza a última mensagem (o balão do assistente em progresso) de forma imutável.
+  function atualizarUltima(fn) {
+    setMessages((prev) => {
+      if (prev.length === 0) return prev;
+      const copia = prev.slice();
+      copia[copia.length - 1] = fn(copia[copia.length - 1]);
+      return copia;
+    });
+  }
+
   async function handleSend(e) {
     e.preventDefault();
     const content = text.trim();
-    if (!content) return;
+    if (!content || sending) return;
 
-    setMessages((prev) => [...prev, { from: "me", text: content }]);
+    // Histórico visível (turnos anteriores) para o modelo ter o contexto da conversa.
+    // `messages` aqui ainda reflete só os turnos já concluídos — o setMessages abaixo é
+    // assíncrono e o botão fica travado (`sending`) enquanto um envio está em curso.
+    // Ignora balões vazios, em progresso ou que terminaram em erro.
+    const history = messages
+      .filter((m) => m.text?.trim() && !m.streaming && !m.erro)
+      .map((m) => ({ role: m.from === "me" ? "user" : "assistant", text: m.text }));
+
+    // Mensagem do usuário + balão do assistente "em progresso".
+    setMessages((prev) => [
+      ...prev,
+      { from: "me", text: content },
+      { from: "server", text: "", steps: [], streaming: true },
+    ]);
     setText("");
     setSending(true);
+
     try {
-      const data = await sendMessage(content, auth.token, model);
-      setMessages((prev) => [...prev, { from: "server", text: data.reply }]);
+      await sendMessageStream(content, auth.token, model, history, {
+        onTool: ({ nome, argumentos }) =>
+          atualizarUltima((m) => ({
+            ...m,
+            steps: [...m.steps, { nome, argumentos, estado: "rodando" }],
+          })),
+        onToolFim: ({ erro }) =>
+          atualizarUltima((m) => {
+            // marca a última tool ainda "rodando" como concluída
+            const steps = m.steps.slice();
+            for (let i = steps.length - 1; i >= 0; i--) {
+              if (steps[i].estado === "rodando") {
+                steps[i] = { ...steps[i], estado: erro ? "erro" : "ok" };
+                break;
+              }
+            }
+            return { ...m, steps };
+          }),
+        onText: (delta) =>
+          atualizarUltima((m) => ({ ...m, text: m.text + delta })),
+        onErro: (mensagem) =>
+          atualizarUltima((m) => ({
+            ...m,
+            text: m.text ? `${m.text}\n\n${mensagem}` : mensagem,
+            streaming: false,
+            erro: true, // não reenvia mensagem de erro como histórico
+          })),
+        onFim: () => atualizarUltima((m) => ({ ...m, streaming: false })),
+      });
     } catch (err) {
-      setMessages((prev) => [...prev, { from: "server", text: `Erro: ${err.message}` }]);
+      atualizarUltima((m) => ({
+        ...m,
+        text: m.text ? `${m.text}\n\nErro: ${err.message}` : `Erro: ${err.message}`,
+        streaming: false,
+        erro: true, // não reenvia mensagem de erro como histórico
+      }));
     } finally {
+      // rede de segurança: garante que o balão não fique "streamando" pra sempre
+      atualizarUltima((m) => (m.streaming ? { ...m, streaming: false } : m));
       setSending(false);
     }
   }
@@ -80,7 +151,7 @@ export default function Home({ auth, onLogout }) {
         <div className="max-w-2xl mx-auto space-y-3">
           {messages.length === 0 && (
             <p className="text-center text-slate-400 mt-10">
-              Envie uma mensagem — o servidor sempre responde "olá".
+              Pergunte sobre os dados meteorológicos, a previsão do tempo ou a agenda.
             </p>
           )}
           {messages.map((m, i) => (
@@ -95,7 +166,30 @@ export default function Home({ auth, onLogout }) {
                     : "bg-white text-slate-800 shadow-sm"
                 }`}
               >
-                {m.text}
+                {/* Transparência: tools chamadas (nome + argumentos) ao vivo */}
+                {m.from === "server" && m.steps?.length > 0 && (
+                  <div className="mb-2 space-y-1 border-b border-slate-100 pb-2">
+                    {m.steps.map((s, si) => (
+                      <div
+                        key={si}
+                        className="flex items-center gap-1.5 text-xs text-slate-500 font-mono"
+                      >
+                        <span aria-hidden>
+                          {s.estado === "ok" ? "✓" : s.estado === "erro" ? "⚠" : "⏳"}
+                        </span>
+                        <span>
+                          🔧 {s.nome}({formatArgs(s.argumentos)})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="whitespace-pre-wrap">
+                  {m.text}
+                  {m.streaming && (
+                    <span className="ml-0.5 animate-pulse text-slate-400">▌</span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
