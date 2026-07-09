@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ..agent import (
@@ -12,6 +12,7 @@ from ..agent import (
     stream_agente,
 )
 from ..models import User
+from ..ratelimit import limiter
 from ..schemas import MessageIn, MessageOut
 from ..security import get_current_user
 
@@ -26,7 +27,9 @@ def list_models(_user: User = Depends(get_current_user)):
 
 
 @router.post("/message", response_model=MessageOut)
+@limiter.limit("20/minute")  # limita custo do Gemini por IP
 def send_message(
+    request: Request,
     data: MessageIn,
     _user: User = Depends(get_current_user),
 ):
@@ -44,7 +47,9 @@ def _sse(evento: dict) -> str:
 
 
 @router.post("/message/stream")
+@limiter.limit("20/minute")  # limita custo do Gemini por IP
 def send_message_stream(
+    request: Request,
     data: MessageIn,
     _user: User = Depends(get_current_user),
 ):
