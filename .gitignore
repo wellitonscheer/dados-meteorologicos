@@ -7,3 +7,6 @@ camera-dados-meteorologicos-*.json
 
 # Logs da aplicação (gerados em runtime)
 logs/
+
+# Artefatos do Playwright MCP (sessões de browser do Claude Code)
+.playwright-mcp/

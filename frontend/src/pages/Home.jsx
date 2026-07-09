@@ -1,15 +1,29 @@
 import { useState, useEffect, useRef } from "react";
-import { sendMessage } from "../api.js";
+import { getModels, sendMessage } from "../api.js";
 
 export default function Home({ auth, onLogout }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [models, setModels] = useState([]);
+  const [model, setModel] = useState("");
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Carrega a lista de modelos disponíveis e seleciona o padrão do backend.
+  useEffect(() => {
+    getModels(auth.token)
+      .then((data) => {
+        setModels(data.models);
+        setModel(data.default);
+      })
+      .catch(() => {
+        // sem lista: o backend cai no modelo padrão ao enviar a mensagem
+      });
+  }, [auth.token]);
 
   async function handleSend(e) {
     e.preventDefault();
@@ -20,7 +34,7 @@ export default function Home({ auth, onLogout }) {
     setText("");
     setSending(true);
     try {
-      const data = await sendMessage(content, auth.token);
+      const data = await sendMessage(content, auth.token, model);
       setMessages((prev) => [...prev, { from: "server", text: data.reply }]);
     } catch (err) {
       setMessages((prev) => [...prev, { from: "server", text: `Erro: ${err.message}` }]);
@@ -32,16 +46,33 @@ export default function Home({ auth, onLogout }) {
   return (
     <div className="h-screen flex flex-col bg-slate-100">
       {/* Topo com usuário logado */}
-      <header className="bg-white shadow-sm px-6 py-3 flex items-center justify-between">
+      <header className="bg-white shadow-sm px-6 py-3 flex items-center justify-between gap-4">
         <span className="text-slate-700">
           Logado como <span className="font-semibold">{auth.username}</span>
         </span>
-        <button
-          onClick={onLogout}
-          className="text-sm rounded-lg border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-50"
-        >
-          Sair
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <span className="hidden sm:inline">Modelo</span>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={models.length === 0}
+              className="rounded-lg border border-slate-300 px-2 py-1 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            onClick={onLogout}
+            className="text-sm rounded-lg border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-50"
+          >
+            Sair
+          </button>
+        </div>
       </header>
 
       {/* Área do chat */}

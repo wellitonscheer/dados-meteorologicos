@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..agent import executar_agente
+from ..agent import MODELO_PADRAO, MODELOS_DISPONIVEIS, executar_agente
 from ..models import User
 from ..schemas import MessageIn, MessageOut
 from ..security import get_current_user
@@ -11,13 +11,19 @@ router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger("app.chat")
 
 
+@router.get("/models")
+def list_models(_user: User = Depends(get_current_user)):
+    """Modelos Gemini disponíveis para o chat e qual é o padrão."""
+    return {"models": MODELOS_DISPONIVEIS, "default": MODELO_PADRAO}
+
+
 @router.post("/message", response_model=MessageOut)
 def send_message(
     data: MessageIn,
     _user: User = Depends(get_current_user),
 ):
     try:
-        reply = executar_agente(data.text)
+        reply = executar_agente(data.text, data.model)
     except Exception as exc:  # falha ao chamar o Gemini -> erro limpo p/ o front
         logger.exception("Falha ao executar o agente (mensagem=%r)", data.text)
         raise HTTPException(status_code=502, detail="Erro ao consultar o Gemini") from exc
