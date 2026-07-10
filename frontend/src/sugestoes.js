@@ -3,8 +3,10 @@
 // cada rodada mostra perguntas de categorias diferentes, cobrindo as
 // capacidades do agente (leituras das estações, dados técnicos do Windy,
 // operações de campo, cadastro, região, agenda).
-// As perguntas citam produtores/cidades/culturas que existem nas planilhas de
-// exemplo, para toda sugestão clicada retornar dado de verdade.
+// As perguntas citam APENAS produtores/propriedades/cidades/culturas que
+// existem nas planilhas (cidades: Porto Alegre, Caxias do Sul, Pelotas,
+// Três de Maio, Gravataí, São Leopoldo), para toda sugestão clicada retornar
+// dado de verdade — ao editar, confira as planilhas antes de citar um nome.
 // Diretriz de conteúdo: o Windy fornece DADOS TÉCNICOS (vento médio, rajada,
 // umidade relativa, ponto de orvalho, temperatura mín/máx) — as sugestões
 // pedem essas métricas específicas, nunca "previsão do tempo" genérica nem
@@ -16,7 +18,7 @@ const BANCO_DE_SUGESTOES = [
       "Como estão as condições climáticas na propriedade do João Silva?",
       "Quais produtores registraram chuva nas últimas leituras?",
       "Onde está ventando mais forte entre as estações?",
-      "Como está a umidade nas lavouras de Santa Rosa?",
+      "Como está a umidade nas lavouras de Três de Maio?",
     ],
   },
   {
@@ -25,14 +27,14 @@ const BANCO_DE_SUGESTOES = [
       "Quais as temperaturas mínima e máxima dos próximos 3 dias na Fazenda Sol Nascente?",
       "Qual a rajada máxima de vento esperada amanhã nas propriedades de soja?",
       "Qual o ponto de orvalho mínimo dos próximos dias na propriedade do Pedro Souza?",
-      "Qual a umidade relativa mínima esperada esta semana na propriedade do João Silva?",
+      "Qual a umidade relativa mínima esperada esta semana no Rancho Fundo da Ana Costa?",
     ],
   },
   {
     categoria: "operacoes",
     perguntas: [
       "Amanhã dá para pulverizar na propriedade da Maria Oliveira? Me traga vento médio e rajadas.",
-      "Qual dia da semana terá o vento mais fraco nas propriedades de trigo?",
+      "Qual dia da semana terá o vento mais fraco na lavoura de trigo da Lúcia Almeida?",
       "Em quais propriedades o vento passa de 15 km/h amanhã?",
     ],
   },
@@ -48,9 +50,9 @@ const BANCO_DE_SUGESTOES = [
   {
     categoria: "regiao",
     perguntas: [
-      "Compare o vento e a umidade entre Santa Rosa e São Luiz Gonzaga nos próximos dias.",
-      "Qual a temperatura mínima esperada em Santo Cristo no fim de semana?",
-      "Qual a rajada máxima de vento esperada em São Luiz Gonzaga nos próximos 5 dias?",
+      "Compare o vento e a umidade entre Porto Alegre e Três de Maio nos próximos dias.",
+      "Qual a temperatura mínima esperada em Pelotas no fim de semana?",
+      "Qual a rajada máxima de vento esperada em Caxias do Sul nos próximos 5 dias?",
     ],
   },
   {
