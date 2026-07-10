@@ -1,2 +1,105 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+
+/* Sistema de design — "campo & agronomia": verde floresta dominante, neutros
+   quentes cor de areia (tintados em OKLCH) e âmbar como acento raro. Tokens
+   semânticos viram utilitários (bg-primary, text-ink, border-line, ...). */
+@theme {
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", sans-serif;
+
+  /* superfícies (areia quente, hue ~92) */
+  --color-app: oklch(96.5% 0.009 92);
+  --color-surface: oklch(99.2% 0.004 92);
+  --color-sidebar: oklch(95% 0.012 90);
+  --color-popover: oklch(99.5% 0.003 92);
+
+  /* linhas / divisórias */
+  --color-line: oklch(90% 0.012 90);
+  --color-line-strong: oklch(83% 0.014 88);
+
+  /* tinta (texto, verde-tintado) */
+  --color-ink: oklch(27% 0.018 140);
+  --color-ink-soft: oklch(44% 0.018 135);
+  --color-ink-muted: oklch(52% 0.015 120); /* AA (>=4.5:1) mesmo em xs sobre a sidebar */
+
+  /* primária (verde floresta) */
+  --color-primary: oklch(47% 0.098 150);
+  --color-primary-hover: oklch(41% 0.098 150);
+  --color-primary-active: oklch(36% 0.09 150);
+  --color-primary-fg: oklch(98% 0.01 100);
+  --color-primary-tint: oklch(94% 0.03 150); /* fundo suave p/ chips/realces */
+
+  /* header (pinho profundo dessaturado) */
+  --color-header: oklch(31% 0.05 152);
+  --color-header-fg: oklch(96% 0.012 95);
+  --color-header-soft: oklch(80% 0.02 100);
+  --color-header-line: oklch(42% 0.045 152);
+
+  /* acento e semânticos (uso raro) */
+  --color-accent: oklch(74% 0.14 72);
+  --color-danger: oklch(52% 0.18 28);
+  --color-danger-tint: oklch(95% 0.03 28);
+  --color-warn: oklch(64% 0.14 70);
+  --color-ok: oklch(52% 0.1 150);
+  --color-ring: oklch(60% 0.11 150);
+
+  /* raios */
+  --radius-field: 0.625rem;
+  --radius-card: 0.75rem;
+  --radius-bubble: 1.1rem;
+
+  /* sombra tintada — só para o que precisa realmente elevar (popover) */
+  --shadow-popover: 0 12px 28px -12px oklch(30% 0.06 150 / 0.28),
+    0 2px 6px -2px oklch(30% 0.06 150 / 0.16);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-app);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* números alinhados nas tabelas de dados */
+  table,
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* foco visível consistente e tintado (baseline de acessibilidade) */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: oklch(85% 0.06 150 / 0.55);
+  }
+
+  /* scrollbars discretas e tintadas */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-ink-muted);
+  }
+}

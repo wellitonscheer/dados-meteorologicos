@@ -23,6 +23,16 @@ export async function getModels(token) {
   return res.json(); // { models: [{ id, label }], default }
 }
 
+export async function getPlanilhas(token) {
+  const res = await fetch(`${API_URL}/api/planilhas`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error("Falha ao carregar as planilhas");
+  }
+  return res.json(); // { planilhas: [{ id, nome, descricao, url, colunas, observacoes, exemplos }] }
+}
+
 export async function sendMessage(text, token, model) {
   const res = await fetch(`${API_URL}/api/message`, {
     method: "POST",
@@ -46,7 +56,7 @@ export async function sendMessage(text, token, model) {
 // chegam em tempo real:
 //   onText(delta)            -> pedaço do texto da resposta
 //   onTool({ nome, argumentos }) -> uma tool prestes a rodar
-//   onToolFim({ nome, erro })    -> tool concluída (✓/⚠)
+//   onToolFim({ nome, erro })    -> tool concluída (ok/erro)
 //   onErro(mensagem)         -> erro amigável (encerra)
 //   onFim()                  -> fim da resposta
 export async function sendMessageStream(text, token, model, history = [], handlers = {}) {
