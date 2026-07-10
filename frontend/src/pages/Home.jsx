@@ -2,12 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getModels, sendMessageStream } from "../api.js";
+import { sortearSugestoes } from "../sugestoes.js";
 import SidebarPlanilhas from "../components/SidebarPlanilhas.jsx";
 import {
   Brandmark,
   IconAlert,
   IconCheck,
   IconChevron,
+  IconRefresh,
+  IconTrash,
   IconSend,
 } from "../components/icons.jsx";
 
@@ -35,14 +38,6 @@ const mdComponents = {
 const PROSE =
   "prose prose-sm max-w-none break-words prose-p:text-ink prose-li:text-ink prose-headings:text-ink prose-strong:text-ink prose-strong:font-semibold prose-a:text-primary prose-a:font-medium prose-code:text-ink prose-code:before:content-none prose-code:after:content-none prose-th:text-ink prose-td:text-ink-soft";
 
-// Perguntas de exemplo mostradas no empty state (clicáveis, preenchem o input).
-// Ficam fora de `messages` de propósito: são sugestões, nunca entram no histórico.
-const EXEMPLOS = [
-  "Como estão as condições climáticas na propriedade do João Silva?",
-  "Qual a previsão do tempo para a Fazenda Sol Nascente amanhã?",
-  "Quais produtores cultivam soja?",
-];
-
 // Rótulos amigáveis para as tools que o agente chama (fallback genérico para
 // tool nova ainda sem rótulo).
 const ROTULOS_TOOLS = {
@@ -66,9 +61,9 @@ function EstadoIcone({ estado, size = 13 }) {
   );
 }
 
-// Empty state: apresenta o assistente e ensina o que perguntar. Os exemplos são
-// botões que preenchem o input.
-function EmptyState({ onPick }) {
+// Empty state: apresenta o assistente e ensina o que perguntar. As sugestões
+// são sorteadas pelo Home (mudam a cada visita) e enviadas direto ao clicar.
+function EmptyState({ sugestoes, onPick }) {
   return (
     <div className="mx-auto flex min-h-full max-w-xl flex-col justify-center px-4 py-12">
       <span className="text-primary">
@@ -78,7 +73,7 @@ function EmptyState({ onPick }) {
         Como posso ajudar?
       </h2>
       <div className="mt-6 space-y-2">
-        {EXEMPLOS.map((q) => (
+        {sugestoes.map((q) => (
           <button
             key={q}
             type="button"
@@ -161,6 +156,10 @@ export default function Home({ auth, onLogout }) {
   const [sending, setSending] = useState(false);
   const [models, setModels] = useState([]);
   const [model, setModel] = useState("");
+  // Sugestões da rodada (fora de `messages` de propósito: nunca entram no
+  // histórico). O initializer sorteia a cada carga da página; re-sorteadas ao
+  // fim de cada resposta e pelo botão de embaralhar.
+  const [sugestoes, setSugestoes] = useState(() => sortearSugestoes());
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -180,12 +179,6 @@ export default function Home({ auth, onLogout }) {
       });
   }, [auth.token]);
 
-  // Preenche o input com um exemplo e devolve o foco.
-  function usarExemplo(q) {
-    setText(q);
-    inputRef.current?.focus();
-  }
-
   // Atualiza a última mensagem (o balão do assistente em progresso) de forma imutável.
   function atualizarUltima(fn) {
     setMessages((prev) => {
@@ -196,22 +189,26 @@ export default function Home({ auth, onLogout }) {
     });
   }
 
-  async function handleSend(e) {
-    e.preventDefault();
-    const content = text.trim();
+  // Envia uma mensagem ao agente — digitada no input ou vinda de uma sugestão
+  // clicada (que envia direto, sem passar pelo input). Com `zerar`, a conversa
+  // é substituída e o agente responde sem contexto anterior (cada sugestão
+  // inicia uma conversa do zero).
+  async function enviar(content, { zerar = false } = {}) {
     if (!content || sending) return;
 
     // Histórico visível (turnos anteriores) para o modelo ter o contexto da conversa.
     // `messages` aqui ainda reflete só os turnos já concluídos — o setMessages abaixo é
     // assíncrono e o botão fica travado (`sending`) enquanto um envio está em curso.
     // Ignora balões vazios, em progresso ou que terminaram em erro.
-    const history = messages
-      .filter((m) => m.text?.trim() && !m.streaming && !m.erro)
-      .map((m) => ({ role: m.from === "me" ? "user" : "assistant", text: m.text }));
+    const history = zerar
+      ? []
+      : messages
+          .filter((m) => m.text?.trim() && !m.streaming && !m.erro)
+          .map((m) => ({ role: m.from === "me" ? "user" : "assistant", text: m.text }));
 
     // Mensagem do usuário + balão do assistente "em progresso".
     setMessages((prev) => [
-      ...prev,
+      ...(zerar ? [] : prev),
       { from: "me", text: content },
       { from: "server", text: "", steps: [], streaming: true },
     ]);
@@ -259,9 +256,26 @@ export default function Home({ auth, onLogout }) {
       // rede de segurança: garante que o balão não fique "streamando" pra sempre
       atualizarUltima((m) => (m.streaming ? { ...m, streaming: false } : m));
       setSending(false);
+      // rodada nova, sugestões novas: mantém a descoberta das capacidades
+      setSugestoes(sortearSugestoes());
       // devolve o foco (perdido quando o envio foi pelo clique no botão)
       inputRef.current?.focus();
     }
+  }
+
+  function handleSend(e) {
+    e.preventDefault();
+    enviar(text.trim());
+  }
+
+  // Zera o contexto da conversa (o backend é stateless: o histórico só existe
+  // aqui) e volta ao estado inicial, com sugestões novas.
+  function novaConversa() {
+    if (sending) return;
+    setMessages([]);
+    setText("");
+    setSugestoes(sortearSugestoes());
+    inputRef.current?.focus();
   }
 
   return (
@@ -311,12 +325,16 @@ export default function Home({ auth, onLogout }) {
       {/* Sidebar de planilhas + coluna do chat */}
       <div className="flex min-h-0 flex-1">
         <SidebarPlanilhas token={auth.token} />
-        {/* min-w-0: sem ele, tabelas nos balões estouram o flex */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* min-w-0: sem ele, tabelas nos balões estouram o flex.
+            relative: âncora das sugestões flutuantes (overlay absoluto). */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
           {/* Área do chat */}
           <main className="min-h-0 flex-1 overflow-y-auto">
             {messages.length === 0 ? (
-              <EmptyState onPick={usarExemplo} />
+              <EmptyState
+                sugestoes={sugestoes}
+                onPick={(q) => enviar(q, { zerar: true })}
+              />
             ) : (
               <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
                 {messages.map((m, i) => (
@@ -365,12 +383,51 @@ export default function Home({ auth, onLogout }) {
             )}
           </main>
 
+          {/* Sugestões flutuando no gutter à direita dos balões (só em telas
+              largas, onde sobra espaço): overlay absoluto — não mexe no
+              tamanho do chat. Na tela vazia o EmptyState já cumpre o papel. */}
+          {messages.length > 0 && (
+            <div className="absolute bottom-20 right-10 z-10 hidden w-56 flex-col items-end gap-2 xl:flex">
+              {sugestoes.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => enviar(q, { zerar: true })}
+                  disabled={sending}
+                  className="rounded-2xl border border-line bg-surface px-3 py-2 text-left text-xs text-ink-soft shadow-sm transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {q}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setSugestoes(sortearSugestoes())}
+                disabled={sending}
+                title="Outras sugestões"
+                aria-label="Outras sugestões"
+                className="rounded-full border border-line bg-surface p-2 text-ink-muted shadow-sm transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <IconRefresh size={14} />
+              </button>
+            </div>
+          )}
+
           {/* Input de mensagem */}
           <form
             onSubmit={handleSend}
             className="border-t border-line bg-surface px-4 py-3"
           >
             <div className="mx-auto flex max-w-2xl gap-2">
+              <button
+                type="button"
+                onClick={novaConversa}
+                disabled={sending || messages.length === 0}
+                title="Limpar conversa"
+                aria-label="Limpar conversa"
+                className="flex items-center rounded-field border border-line bg-app px-3 text-ink-muted transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <IconTrash size={16} />
+              </button>
               <input
                 ref={inputRef}
                 autoFocus
