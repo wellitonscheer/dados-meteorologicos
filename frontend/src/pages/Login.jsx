@@ -26,8 +26,8 @@ export default function Login({ onLogin }) {
     <div className="min-h-screen flex items-center justify-center bg-app p-6">
       <div className="w-full max-w-sm">
         {/* Marca */}
-        <div className="mb-8">
-          <div className="flex items-center gap-2.5 text-primary">
+        <div className="mb-8 text-center">
+          <div className="flex items-center justify-center gap-2.5 text-primary">
             <Brandmark size={26} />
             <span className="text-lg font-semibold tracking-tight text-ink">
               Assistente Meteorológico

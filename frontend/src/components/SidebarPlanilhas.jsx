@@ -86,9 +86,6 @@ export default function SidebarPlanilhas({ token }) {
                   />
                   <p className="text-sm font-semibold text-ink">{p.nome}</p>
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-                  {p.descricao}
-                </p>
                 <div className="mt-2 flex items-center gap-3">
                   <a
                     href={p.url}

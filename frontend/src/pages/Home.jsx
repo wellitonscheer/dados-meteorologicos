@@ -76,10 +76,6 @@ function EmptyState({ onPick }) {
       <h2 className="mt-4 text-xl font-semibold tracking-tight text-ink">
         Como posso ajudar?
       </h2>
-      <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-        Consulto as planilhas de clima e de propriedades, a previsão do tempo e a
-        agenda dos produtores rurais. Comece por um exemplo:
-      </p>
       <div className="mt-6 space-y-2">
         {EXEMPLOS.map((q) => (
           <button
