@@ -61,7 +61,7 @@ PLANILHAS = [
             "https://docs.google.com/spreadsheets/d/"
             "1xPeV2J9J3Va0SABLarL36iaZhXiSZrLO2BvKtq1PLss/edit?usp=sharing"
         ),
-        "tools": ["buscar_propriedades"],
+        "tools": ["buscar_propriedades", "ler_propriedades"],
         "colunas": [
             "Produtor",
             "CPF",
