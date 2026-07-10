@@ -310,8 +310,9 @@ export default function Home({ auth, onLogout }) {
       {/* Sidebar de planilhas + coluna do chat */}
       <div className="flex min-h-0 flex-1">
         <SidebarPlanilhas token={auth.token} />
-        {/* min-w-0: sem ele, tabelas nos balões estouram o flex */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* min-w-0: sem ele, tabelas nos balões estouram o flex.
+            relative: âncora das sugestões flutuantes (overlay absoluto). */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
           {/* Área do chat */}
           <main className="min-h-0 flex-1 overflow-y-auto">
             {messages.length === 0 ? (
@@ -364,37 +365,40 @@ export default function Home({ auth, onLogout }) {
             )}
           </main>
 
-          {/* Input de mensagem, com chips de sugestões durante a conversa
-              (na tela vazia o EmptyState já mostra as sugestões) */}
+          {/* Sugestões flutuando no gutter à direita dos balões (só em telas
+              largas, onde sobra espaço): overlay absoluto — não mexe no
+              tamanho do chat. Na tela vazia o EmptyState já cumpre o papel. */}
+          {messages.length > 0 && (
+            <div className="absolute bottom-20 right-4 z-10 hidden w-56 flex-col items-end gap-2 xl:flex">
+              {sugestoes.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => enviar(q)}
+                  disabled={sending}
+                  className="rounded-2xl border border-line bg-surface px-3 py-2 text-left text-xs text-ink-soft shadow-sm transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {q}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setSugestoes(sortearSugestoes())}
+                disabled={sending}
+                title="Outras sugestões"
+                aria-label="Outras sugestões"
+                className="rounded-full border border-line bg-surface p-2 text-ink-muted shadow-sm transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <IconRefresh size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Input de mensagem */}
           <form
             onSubmit={handleSend}
             className="border-t border-line bg-surface px-4 py-3"
           >
-            {messages.length > 0 && (
-              <div className="mx-auto mb-2.5 flex max-w-2xl items-center gap-2 overflow-x-auto">
-                {sugestoes.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => enviar(q)}
-                    disabled={sending}
-                    className="shrink-0 rounded-full border border-line bg-app px-3 py-1.5 text-xs text-ink-soft transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {q}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setSugestoes(sortearSugestoes())}
-                  disabled={sending}
-                  title="Outras sugestões"
-                  aria-label="Outras sugestões"
-                  className="shrink-0 rounded-full border border-line bg-app p-1.5 text-ink-muted transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <IconRefresh size={14} />
-                </button>
-              </div>
-            )}
             <div className="mx-auto flex max-w-2xl gap-2">
               <input
                 ref={inputRef}
