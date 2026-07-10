@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getModels, sendMessageStream } from "../api.js";
+import { sortearSugestoes } from "../sugestoes.js";
 import SidebarPlanilhas from "../components/SidebarPlanilhas.jsx";
 import {
   Brandmark,
   IconAlert,
   IconCheck,
   IconChevron,
+  IconRefresh,
   IconSend,
 } from "../components/icons.jsx";
 
@@ -35,14 +37,6 @@ const mdComponents = {
 const PROSE =
   "prose prose-sm max-w-none break-words prose-p:text-ink prose-li:text-ink prose-headings:text-ink prose-strong:text-ink prose-strong:font-semibold prose-a:text-primary prose-a:font-medium prose-code:text-ink prose-code:before:content-none prose-code:after:content-none prose-th:text-ink prose-td:text-ink-soft";
 
-// Perguntas de exemplo mostradas no empty state (clicáveis, preenchem o input).
-// Ficam fora de `messages` de propósito: são sugestões, nunca entram no histórico.
-const EXEMPLOS = [
-  "Como estão as condições climáticas na propriedade do João Silva?",
-  "Qual a previsão do tempo para a Fazenda Sol Nascente amanhã?",
-  "Quais produtores cultivam soja?",
-];
-
 // Rótulos amigáveis para as tools que o agente chama (fallback genérico para
 // tool nova ainda sem rótulo).
 const ROTULOS_TOOLS = {
@@ -66,9 +60,9 @@ function EstadoIcone({ estado, size = 13 }) {
   );
 }
 
-// Empty state: apresenta o assistente e ensina o que perguntar. Os exemplos são
-// botões que preenchem o input.
-function EmptyState({ onPick }) {
+// Empty state: apresenta o assistente e ensina o que perguntar. As sugestões
+// são sorteadas pelo Home (mudam a cada visita) e enviadas direto ao clicar.
+function EmptyState({ sugestoes, onPick }) {
   return (
     <div className="mx-auto flex min-h-full max-w-xl flex-col justify-center px-4 py-12">
       <span className="text-primary">
@@ -78,7 +72,7 @@ function EmptyState({ onPick }) {
         Como posso ajudar?
       </h2>
       <div className="mt-6 space-y-2">
-        {EXEMPLOS.map((q) => (
+        {sugestoes.map((q) => (
           <button
             key={q}
             type="button"
@@ -161,6 +155,10 @@ export default function Home({ auth, onLogout }) {
   const [sending, setSending] = useState(false);
   const [models, setModels] = useState([]);
   const [model, setModel] = useState("");
+  // Sugestões da rodada (fora de `messages` de propósito: nunca entram no
+  // histórico). O initializer sorteia a cada carga da página; re-sorteadas ao
+  // fim de cada resposta e pelo botão de embaralhar.
+  const [sugestoes, setSugestoes] = useState(() => sortearSugestoes());
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -180,12 +178,6 @@ export default function Home({ auth, onLogout }) {
       });
   }, [auth.token]);
 
-  // Preenche o input com um exemplo e devolve o foco.
-  function usarExemplo(q) {
-    setText(q);
-    inputRef.current?.focus();
-  }
-
   // Atualiza a última mensagem (o balão do assistente em progresso) de forma imutável.
   function atualizarUltima(fn) {
     setMessages((prev) => {
@@ -196,9 +188,9 @@ export default function Home({ auth, onLogout }) {
     });
   }
 
-  async function handleSend(e) {
-    e.preventDefault();
-    const content = text.trim();
+  // Envia uma mensagem ao agente — digitada no input ou vinda de uma sugestão
+  // clicada (que envia direto, sem passar pelo input).
+  async function enviar(content) {
     if (!content || sending) return;
 
     // Histórico visível (turnos anteriores) para o modelo ter o contexto da conversa.
@@ -259,9 +251,16 @@ export default function Home({ auth, onLogout }) {
       // rede de segurança: garante que o balão não fique "streamando" pra sempre
       atualizarUltima((m) => (m.streaming ? { ...m, streaming: false } : m));
       setSending(false);
+      // rodada nova, sugestões novas: mantém a descoberta das capacidades
+      setSugestoes(sortearSugestoes());
       // devolve o foco (perdido quando o envio foi pelo clique no botão)
       inputRef.current?.focus();
     }
+  }
+
+  function handleSend(e) {
+    e.preventDefault();
+    enviar(text.trim());
   }
 
   return (
@@ -316,7 +315,7 @@ export default function Home({ auth, onLogout }) {
           {/* Área do chat */}
           <main className="min-h-0 flex-1 overflow-y-auto">
             {messages.length === 0 ? (
-              <EmptyState onPick={usarExemplo} />
+              <EmptyState sugestoes={sugestoes} onPick={enviar} />
             ) : (
               <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
                 {messages.map((m, i) => (
@@ -365,11 +364,37 @@ export default function Home({ auth, onLogout }) {
             )}
           </main>
 
-          {/* Input de mensagem */}
+          {/* Input de mensagem, com chips de sugestões durante a conversa
+              (na tela vazia o EmptyState já mostra as sugestões) */}
           <form
             onSubmit={handleSend}
             className="border-t border-line bg-surface px-4 py-3"
           >
+            {messages.length > 0 && (
+              <div className="mx-auto mb-2.5 flex max-w-2xl items-center gap-2 overflow-x-auto">
+                {sugestoes.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => enviar(q)}
+                    disabled={sending}
+                    className="shrink-0 rounded-full border border-line bg-app px-3 py-1.5 text-xs text-ink-soft transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {q}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setSugestoes(sortearSugestoes())}
+                  disabled={sending}
+                  title="Outras sugestões"
+                  aria-label="Outras sugestões"
+                  className="shrink-0 rounded-full border border-line bg-app p-1.5 text-ink-muted transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <IconRefresh size={14} />
+                </button>
+              </div>
+            )}
             <div className="mx-auto flex max-w-2xl gap-2">
               <input
                 ref={inputRef}

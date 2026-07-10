@@ -69,6 +69,15 @@ export function IconAlert({ size = 15, className = "", ...props }) {
   );
 }
 
+export function IconRefresh({ size = 15, className = "", ...props }) {
+  return (
+    <Icon size={size} className={className} {...props}>
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </Icon>
+  );
+}
+
 export function IconSend({ size = 18, className = "", ...props }) {
   return (
     <Icon size={size} className={className} {...props}>
