@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from google import genai
 
 from .config import GOOGLE_SHEETS_SPREADSHEET_NAME
+from .planilhas_info import bloco_esquema
 from .tools import TOOL_DECLARATIONS, TOOL_FUNCTIONS
 
 client = genai.Client()  # lê GEMINI_API_KEY do ambiente automaticamente
@@ -30,7 +31,7 @@ MODELOS_DISPONIVEIS = [
     {"id": "gemini-3-flash-preview", "label": "Gemini 3 Flash"},
     {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
 ]
-MODELO_PADRAO = "gemini-2.5-flash"
+MODELO_PADRAO = "gemini-3.5-flash"
 _MODELOS_VALIDOS = {m["id"] for m in MODELOS_DISPONIVEIS}
 
 MAX_ITERACOES = 5  # rodadas com tools; depois vem 1 rodada de fechamento sem tools
@@ -80,7 +81,7 @@ SYSTEM_INSTRUCTION = (
     "(próximos compromissos: título, início, fim, local). Combine as tools "
     "quando fizer sentido. Só afirme dados que vieram das tools; se uma tool "
     "retornar 'erro', explique o problema ao usuário em linguagem simples. "
-    "Responda sempre em português."
+    "Responda sempre em português. " + bloco_esquema()
 )
 
 FUSO = ZoneInfo("America/Sao_Paulo")  # mesmo fuso das tools (previsão/agenda)

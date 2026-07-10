@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getModels, sendMessageStream } from "../api.js";
+import SidebarPlanilhas from "../components/SidebarPlanilhas.jsx";
 
 // Plugins e componentes do markdown em escopo de módulo: evita recriar os
 // objetos a cada delta de streaming (que dispararia re-parse desnecessário).
@@ -22,17 +23,71 @@ const mdComponents = {
   },
 };
 
-// Formata os argumentos de uma tool de forma compacta: k=v, k=v
-function formatVal(v) {
-  if (typeof v === "string") return v.length > 24 ? `${v.slice(0, 24)}…` : v;
-  if (v && typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
-function formatArgs(args) {
-  if (!args || typeof args !== "object") return "";
-  return Object.entries(args)
-    .map(([k, v]) => `${k}=${formatVal(v)}`)
-    .join(", ");
+// Balão fixo de boas-vindas: fica fora do array `messages` de propósito, para
+// nunca entrar no histórico reenviado ao modelo.
+const MENSAGEM_BOAS_VINDAS = `Olá! 👋 Eu sou o assistente de dados meteorológicos dos produtores rurais. Consulto as planilhas de clima e de propriedades, a previsão do tempo e a agenda. Alguns exemplos do que você pode perguntar:
+
+- "Como estão as condições climáticas na propriedade do João Silva?"
+- "Qual a previsão do tempo para a Fazenda Sol Nascente amanhã?"
+- "Quais produtores ficam em Pelotas e o que eles cultivam?"`;
+
+// Rótulos amigáveis para as tools que o agente chama (fallback genérico para
+// tool nova ainda sem rótulo).
+const ROTULOS_TOOLS = {
+  buscar_registros: "Consultando os dados climáticos",
+  ler_registros: "Lendo a planilha de dados climáticos",
+  buscar_propriedades: "Consultando produtores e propriedades",
+  geocodificar_local: "Localizando coordenadas",
+  previsao_tempo: "Buscando a previsão do tempo",
+  listar_eventos: "Consultando a agenda",
+};
+const rotuloTool = (nome) => ROTULOS_TOOLS[nome] || `Executando ${nome}`;
+
+// Consultas do agente dentro do balão: durante o streaming mostra só a
+// atividade atual (evita empilhar linhas quando há várias chamadas); ao
+// concluir, colapsa tudo numa linha discreta expansível.
+function PassosTools({ steps, streaming }) {
+  if (!steps?.length) return null;
+
+  if (streaming) {
+    const atual = steps[steps.length - 1];
+    return (
+      <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2 text-xs text-slate-500">
+        {atual.estado === "rodando" ? (
+          <span
+            className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600"
+            aria-hidden
+          />
+        ) : (
+          <span aria-hidden>{atual.estado === "erro" ? "⚠" : "✓"}</span>
+        )}
+        <span>{rotuloTool(atual.nome)}…</span>
+        {steps.length > 1 && (
+          <span className="text-slate-400">({steps.length}ª consulta)</span>
+        )}
+      </div>
+    );
+  }
+
+  const falhas = steps.filter((s) => s.estado === "erro").length;
+  return (
+    <details className="mb-2 border-b border-slate-100 pb-2 text-xs text-slate-500">
+      <summary className="cursor-pointer select-none hover:text-slate-700">
+        {falhas > 0 ? "⚠" : "✓"}{" "}
+        {steps.length === 1
+          ? "1 consulta realizada"
+          : `${steps.length} consultas realizadas`}
+        {falhas > 0 && ` (${falhas} com falha)`}
+      </summary>
+      <ul className="mt-1.5 space-y-1 pl-4">
+        {steps.map((s, si) => (
+          <li key={si}>
+            {s.estado === "erro" ? "⚠" : "✓"} {rotuloTool(s.nome)}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
 export default function Home({ auth, onLogout }) {
@@ -42,6 +97,7 @@ export default function Home({ auth, onLogout }) {
   const [models, setModels] = useState([]);
   const [model, setModel] = useState("");
   const bottomRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -132,6 +188,8 @@ export default function Home({ auth, onLogout }) {
       // rede de segurança: garante que o balão não fique "streamando" pra sempre
       atualizarUltima((m) => (m.streaming ? { ...m, streaming: false } : m));
       setSending(false);
+      // devolve o foco (perdido quando o envio foi pelo clique no botão)
+      inputRef.current?.focus();
     }
   }
 
@@ -167,88 +225,91 @@ export default function Home({ auth, onLogout }) {
         </div>
       </header>
 
-      {/* Área do chat */}
-      <main className="flex-1 min-h-0 overflow-y-auto p-4">
-        <div className="max-w-2xl mx-auto space-y-3">
-          {messages.length === 0 && (
-            <p className="text-center text-slate-400 mt-10">
-              Pergunte sobre os dados meteorológicos, a previsão do tempo ou a agenda.
-            </p>
-          )}
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={`flex ${m.from === "me" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`rounded-2xl px-4 py-2 max-w-[75%] ${
-                  m.from === "me"
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-slate-800 shadow-sm"
-                }`}
-              >
-                {/* Transparência: tools chamadas (nome + argumentos) ao vivo */}
-                {m.from === "server" && m.steps?.length > 0 && (
-                  <div className="mb-2 space-y-1 border-b border-slate-100 pb-2">
-                    {m.steps.map((s, si) => (
-                      <div
-                        key={si}
-                        className="flex items-center gap-1.5 text-xs text-slate-500 font-mono"
-                      >
-                        <span aria-hidden>
-                          {s.estado === "ok" ? "✓" : s.estado === "erro" ? "⚠" : "⏳"}
-                        </span>
-                        <span>
-                          🔧 {s.nome}({formatArgs(s.argumentos)})
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {m.from === "server" ? (
-                  <div className="prose prose-sm prose-slate max-w-none break-words prose-pre:whitespace-pre-wrap prose-pre:break-words">
+      {/* Sidebar de planilhas + coluna do chat */}
+      <div className="flex-1 min-h-0 flex">
+        <SidebarPlanilhas token={auth.token} />
+        {/* min-w-0: sem ele, tabelas nos balões estouram o flex */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* Área do chat */}
+          <main className="flex-1 min-h-0 overflow-y-auto p-4">
+            <div className="max-w-2xl mx-auto space-y-3">
+              {/* Boas-vindas fixas: fora de `messages`, nunca entram no histórico */}
+              <div className="flex justify-start">
+                <div className="rounded-2xl px-4 py-2 max-w-[75%] bg-white text-slate-800 shadow-sm">
+                  <div className="prose prose-sm prose-slate max-w-none break-words">
                     <ReactMarkdown
                       remarkPlugins={remarkPlugins}
                       components={mdComponents}
                     >
-                      {m.text}
+                      {MENSAGEM_BOAS_VINDAS}
                     </ReactMarkdown>
-                    {m.streaming && (
-                      <span className="animate-pulse text-slate-400">▌</span>
+                  </div>
+                </div>
+              </div>
+              {messages.map((m, i) => (
+                <div
+                  key={i}
+                  className={`flex ${m.from === "me" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`rounded-2xl px-4 py-2 max-w-[75%] ${
+                      m.from === "me"
+                        ? "bg-blue-600 text-white"
+                        : "bg-white text-slate-800 shadow-sm"
+                    }`}
+                  >
+                    {/* Transparência: consultas do agente, em linguagem amigável */}
+                    {m.from === "server" && (
+                      <PassosTools steps={m.steps} streaming={m.streaming} />
+                    )}
+                    {m.from === "server" ? (
+                      <div className="prose prose-sm prose-slate max-w-none break-words prose-pre:whitespace-pre-wrap prose-pre:break-words">
+                        <ReactMarkdown
+                          remarkPlugins={remarkPlugins}
+                          components={mdComponents}
+                        >
+                          {m.text}
+                        </ReactMarkdown>
+                        {m.streaming && (
+                          <span className="animate-pulse text-slate-400">▌</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="whitespace-pre-wrap break-words">{m.text}</div>
                     )}
                   </div>
-                ) : (
-                  <div className="whitespace-pre-wrap break-words">{m.text}</div>
-                )}
-              </div>
+                </div>
+              ))}
+              <div ref={bottomRef} />
             </div>
-          ))}
-          <div ref={bottomRef} />
-        </div>
-      </main>
+          </main>
 
-      {/* Input de mensagem */}
-      <form
-        onSubmit={handleSend}
-        className="bg-white border-t border-slate-200 px-4 py-3"
-      >
-        <div className="max-w-2xl mx-auto flex gap-2">
-          <input
-            type="text"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Digite uma mensagem..."
-            className="flex-1 rounded-full border border-slate-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="submit"
-            disabled={sending}
-            className="rounded-full bg-blue-600 text-white px-5 py-2 font-medium hover:bg-blue-700 disabled:opacity-60"
+          {/* Input de mensagem */}
+          <form
+            onSubmit={handleSend}
+            className="bg-white border-t border-slate-200 px-4 py-3"
           >
-            Enviar
-          </button>
+            <div className="max-w-2xl mx-auto flex gap-2">
+              <input
+                ref={inputRef}
+                autoFocus
+                type="text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Digite uma mensagem..."
+                className="flex-1 rounded-full border border-slate-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="submit"
+                disabled={sending}
+                className="rounded-full bg-blue-600 text-white px-5 py-2 font-medium hover:bg-blue-700 disabled:opacity-60"
+              >
+                Enviar
+              </button>
+            </div>
+          </form>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

@@ -12,6 +12,7 @@ from ..agent import (
     stream_agente,
 )
 from ..models import User
+from ..planilhas_info import PLANILHAS
 from ..schemas import MessageIn, MessageOut
 from ..security import get_current_user
 
@@ -23,6 +24,12 @@ logger = logging.getLogger("app.chat")
 def list_models(_user: User = Depends(get_current_user)):
     """Modelos Gemini disponíveis para o chat e qual é o padrão."""
     return {"models": MODELOS_DISPONIVEIS, "default": MODELO_PADRAO}
+
+
+@router.get("/planilhas")
+def list_planilhas(_user: User = Depends(get_current_user)):
+    """Planilhas conectadas ao agente (estrutura e exemplos para a sidebar)."""
+    return {"planilhas": PLANILHAS}
 
 
 @router.post("/message", response_model=MessageOut)
