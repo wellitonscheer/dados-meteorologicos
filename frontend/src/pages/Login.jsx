@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { login } from "../api.js";
+import { Brandmark, IconAlert } from "../components/icons.jsx";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -22,46 +23,86 @@ export default function Login({ onLogin }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm bg-white rounded-xl shadow-md p-8 space-y-5"
-      >
-        <h1 className="text-2xl font-bold text-slate-800 text-center">Entrar</h1>
-
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-slate-600">Usuário</label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            autoFocus
-            required
-          />
+    <div className="min-h-screen flex items-center justify-center bg-app p-6">
+      <div className="w-full max-w-sm">
+        {/* Marca */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2.5 text-primary">
+            <Brandmark size={26} />
+            <span className="text-lg font-semibold tracking-tight text-ink">
+              Assistente Meteorológico
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-ink-muted">
+            Clima e propriedades dos produtores rurais.
+          </p>
         </div>
 
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-slate-600">Senha</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg bg-blue-600 text-white py-2 font-medium hover:bg-blue-700 disabled:opacity-60"
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-card border border-line bg-surface p-7"
         >
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
-      </form>
+          <h1 className="text-base font-semibold text-ink">Entrar na conta</h1>
+          <p className="mt-1 text-sm text-ink-soft">
+            Informe suas credenciais para continuar.
+          </p>
+
+          <div className="mt-6 space-y-4">
+            <div className="space-y-1.5">
+              <label
+                htmlFor="usuario"
+                className="block text-sm font-medium text-ink-soft"
+              >
+                Usuário
+              </label>
+              <input
+                id="usuario"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full rounded-field border border-line bg-app px-3 py-2.5 text-ink placeholder:text-ink-muted transition-colors focus:border-primary focus:bg-surface focus:outline-none"
+                autoFocus
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="senha"
+                className="block text-sm font-medium text-ink-soft"
+              >
+                Senha
+              </label>
+              <input
+                id="senha"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-field border border-line bg-app px-3 py-2.5 text-ink placeholder:text-ink-muted transition-colors focus:border-primary focus:bg-surface focus:outline-none"
+                required
+              />
+            </div>
+          </div>
+
+          {error && (
+            <div
+              role="alert"
+              className="mt-4 flex items-start gap-2 rounded-field border border-danger/25 bg-danger-tint px-3 py-2.5 text-sm text-danger"
+            >
+              <IconAlert size={16} className="mt-px shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="mt-6 w-full rounded-field bg-primary py-2.5 font-semibold text-primary-fg transition-colors hover:bg-primary-hover active:bg-primary-active disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? "Entrando…" : "Entrar"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

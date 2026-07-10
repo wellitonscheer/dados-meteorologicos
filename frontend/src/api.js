@@ -56,7 +56,7 @@ export async function sendMessage(text, token, model) {
 // chegam em tempo real:
 //   onText(delta)            -> pedaço do texto da resposta
 //   onTool({ nome, argumentos }) -> uma tool prestes a rodar
-//   onToolFim({ nome, erro })    -> tool concluída (✓/⚠)
+//   onToolFim({ nome, erro })    -> tool concluída (ok/erro)
 //   onErro(mensagem)         -> erro amigável (encerra)
 //   onFim()                  -> fim da resposta
 export async function sendMessageStream(text, token, model, history = [], handlers = {}) {
