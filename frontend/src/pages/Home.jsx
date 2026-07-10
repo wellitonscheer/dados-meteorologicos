@@ -40,7 +40,7 @@ const PROSE =
 const EXEMPLOS = [
   "Como estão as condições climáticas na propriedade do João Silva?",
   "Qual a previsão do tempo para a Fazenda Sol Nascente amanhã?",
-  "Quais produtores ficam em Pelotas e o que eles cultivam?",
+  "Quais produtores cultivam soja?",
 ];
 
 // Rótulos amigáveis para as tools que o agente chama (fallback genérico para
@@ -49,6 +49,7 @@ const ROTULOS_TOOLS = {
   buscar_registros: "Consultando os dados climáticos",
   ler_registros: "Lendo a planilha de dados climáticos",
   buscar_propriedades: "Consultando produtores e propriedades",
+  ler_propriedades: "Lendo o cadastro de produtores",
   geocodificar_local: "Localizando coordenadas",
   previsao_tempo: "Buscando a previsão do tempo",
   listar_eventos: "Consultando a agenda",
