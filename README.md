@@ -12,6 +12,25 @@ O chat é um **agente**: o **Gemini** (via SDK `google-genai`) decide quando usa
 
 ## Como rodar
 
+### Opção A — scripts (recomendado)
+
+Em uma máquina Linux nova, dois scripts fazem tudo:
+
+```bash
+./scripts/setup.sh    # instala Docker + Compose e cria o .env a partir do exemplo
+# edite o .env (GEMINI_API_KEY, WINDY_API_KEY) e coloque o JSON da service account
+./scripts/start.sh    # valida a configuração e sobe a stack
+```
+
+- `setup.sh` — instala o Docker Engine + o plugin Compose (método oficial via apt no
+  Ubuntu/Debian; script de conveniência get.docker.com nas demais distros), habilita
+  o serviço, adiciona seu usuário ao grupo `docker` e cria o `.env` (sem sobrescrever
+  um existente). É idempotente. macOS: instale o Docker Desktop e pule para o `start.sh`.
+- `start.sh` — confere Docker/`.env`/credencial, avisa o que falta e roda
+  `docker compose up --build -d` (use `--no-build` para subir sem reconstruir).
+
+### Opção B — manual
+
 ```bash
 cp .env.example .env      # defina GEMINI_API_KEY e WINDY_API_KEY
 docker compose up --build
