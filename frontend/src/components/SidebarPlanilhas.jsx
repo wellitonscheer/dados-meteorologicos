@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getPlanilhas } from "../api.js";
 
 // Sidebar com as planilhas conectadas ao agente: link para a planilha real e
-// um painel flutuante com dados de exemplo, para o usuário saber o que dá
-// para perguntar. Some em telas pequenas (< 768px).
+// um dropdown com dados de exemplo que desce do próprio botão, para o usuário
+// saber o que dá para perguntar. Some em telas pequenas (< 768px).
 export default function SidebarPlanilhas({ token }) {
   const [planilhas, setPlanilhas] = useState([]);
   const [erro, setErro] = useState(false);
-  const [aberta, setAberta] = useState(null); // planilha exibida no painel de exemplos
+  // dropdown aberto: { planilha, top, left } — posição fixa calculada no clique
+  // para o painel poder ser mais largo que a sidebar e flutuar sobre o chat
+  const [aberta, setAberta] = useState(null);
+  const painelRef = useRef(null);
 
   useEffect(() => {
     getPlanilhas(token)
@@ -15,13 +18,32 @@ export default function SidebarPlanilhas({ token }) {
       .catch(() => setErro(true));
   }, [token]);
 
-  // fecha o painel com Esc
+  // fecha o dropdown com Esc ou clique fora (sem camada bloqueando a página:
+  // clicar no "Ver exemplos" de outra planilha já troca o painel num clique só)
   useEffect(() => {
     if (!aberta) return;
     const onKey = (e) => e.key === "Escape" && setAberta(null);
+    const onDown = (e) => {
+      if (painelRef.current?.contains(e.target)) return;
+      if (e.target.closest("[data-exemplos-toggle]")) return; // o botão faz o próprio toggle
+      setAberta(null);
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
   }, [aberta]);
+
+  function alternarExemplos(p, e) {
+    if (aberta?.planilha.id === p.id) {
+      setAberta(null);
+      return;
+    }
+    const r = e.currentTarget.getBoundingClientRect();
+    setAberta({ planilha: p, top: r.bottom + 6, left: r.left });
+  }
 
   return (
     <>
@@ -52,45 +74,31 @@ export default function SidebarPlanilhas({ token }) {
               </a>
               <button
                 type="button"
-                onClick={() => setAberta(p)}
+                data-exemplos-toggle
+                onClick={(e) => alternarExemplos(p, e)}
                 className="mt-1 block text-xs text-slate-600 hover:text-slate-800 hover:underline"
               >
-                Ver exemplos
+                Ver exemplos {aberta?.planilha.id === p.id ? "▴" : "▾"}
               </button>
             </div>
           ))}
         </div>
       </aside>
 
-      {/* Painel flutuante de exemplos: sobrepõe o chat, largo o bastante para
-          a tabela quase não precisar de scroll lateral */}
+      {/* Dropdown de exemplos: desce do botão clicado e flutua sobre o chat
+          (position fixed para escapar do overflow da sidebar), largo o
+          suficiente para a tabela quase não precisar de scroll lateral */}
       {aberta && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-6"
-          onClick={() => setAberta(null)}
-        >
           <div
-            className="w-full max-w-4xl max-h-[80vh] overflow-y-auto rounded-xl bg-white p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
+            ref={painelRef}
+            className="fixed z-50 w-[52rem] max-w-[calc(100vw-4rem)] max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl"
+            style={{ top: aberta.top, left: aberta.left }}
           >
-            <div className="mb-3 flex items-center justify-between gap-4">
-              <h3 className="text-sm font-semibold text-slate-800">
-                {aberta.nome} — exemplos de dados
-              </h3>
-              <button
-                type="button"
-                onClick={() => setAberta(null)}
-                aria-label="Fechar"
-                className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              >
-                ✕
-              </button>
-            </div>
             <div className="overflow-x-auto rounded-lg border border-slate-200">
               <table className="w-full text-xs text-slate-600">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-left">
-                    {aberta.colunas.map((c) => (
+                    {aberta.planilha.colunas.map((c) => (
                       <th key={c} className="px-2 py-1.5 font-medium align-top">
                         {c}
                       </th>
@@ -98,7 +106,7 @@ export default function SidebarPlanilhas({ token }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {aberta.exemplos.map((linha, i) => (
+                  {aberta.planilha.exemplos.map((linha, i) => (
                     <tr key={i} className="border-b border-slate-100 last:border-0">
                       {linha.map((valor, j) => (
                         <td key={j} className="px-2 py-1.5 align-top">
@@ -111,7 +119,6 @@ export default function SidebarPlanilhas({ token }) {
               </table>
             </div>
           </div>
-        </div>
       )}
     </>
   );
