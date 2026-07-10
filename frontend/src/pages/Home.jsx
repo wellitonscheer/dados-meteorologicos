@@ -9,8 +9,8 @@ import {
   IconAlert,
   IconCheck,
   IconChevron,
-  IconPlus,
   IconRefresh,
+  IconTrash,
   IconSend,
 } from "../components/icons.jsx";
 
@@ -190,21 +190,25 @@ export default function Home({ auth, onLogout }) {
   }
 
   // Envia uma mensagem ao agente — digitada no input ou vinda de uma sugestão
-  // clicada (que envia direto, sem passar pelo input).
-  async function enviar(content) {
+  // clicada (que envia direto, sem passar pelo input). Com `zerar`, a conversa
+  // é substituída e o agente responde sem contexto anterior (cada sugestão
+  // inicia uma conversa do zero).
+  async function enviar(content, { zerar = false } = {}) {
     if (!content || sending) return;
 
     // Histórico visível (turnos anteriores) para o modelo ter o contexto da conversa.
     // `messages` aqui ainda reflete só os turnos já concluídos — o setMessages abaixo é
     // assíncrono e o botão fica travado (`sending`) enquanto um envio está em curso.
     // Ignora balões vazios, em progresso ou que terminaram em erro.
-    const history = messages
-      .filter((m) => m.text?.trim() && !m.streaming && !m.erro)
-      .map((m) => ({ role: m.from === "me" ? "user" : "assistant", text: m.text }));
+    const history = zerar
+      ? []
+      : messages
+          .filter((m) => m.text?.trim() && !m.streaming && !m.erro)
+          .map((m) => ({ role: m.from === "me" ? "user" : "assistant", text: m.text }));
 
     // Mensagem do usuário + balão do assistente "em progresso".
     setMessages((prev) => [
-      ...prev,
+      ...(zerar ? [] : prev),
       { from: "me", text: content },
       { from: "server", text: "", steps: [], streaming: true },
     ]);
@@ -306,16 +310,6 @@ export default function Home({ auth, onLogout }) {
               ))}
             </select>
           </label>
-          <button
-            type="button"
-            onClick={novaConversa}
-            disabled={sending || messages.length === 0}
-            title="Zerar a conversa e começar do zero"
-            className="flex items-center gap-1.5 rounded-field border border-white/20 px-3 py-1.5 text-sm transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-          >
-            <IconPlus size={15} />
-            <span className="hidden sm:inline">Nova conversa</span>
-          </button>
           <span className="hidden text-sm font-medium md:inline">
             {auth.username}
           </span>
@@ -337,7 +331,10 @@ export default function Home({ auth, onLogout }) {
           {/* Área do chat */}
           <main className="min-h-0 flex-1 overflow-y-auto">
             {messages.length === 0 ? (
-              <EmptyState sugestoes={sugestoes} onPick={enviar} />
+              <EmptyState
+                sugestoes={sugestoes}
+                onPick={(q) => enviar(q, { zerar: true })}
+              />
             ) : (
               <div className="mx-auto max-w-2xl space-y-4 px-4 py-6">
                 {messages.map((m, i) => (
@@ -395,7 +392,7 @@ export default function Home({ auth, onLogout }) {
                 <button
                   key={q}
                   type="button"
-                  onClick={() => enviar(q)}
+                  onClick={() => enviar(q, { zerar: true })}
                   disabled={sending}
                   className="rounded-2xl border border-line bg-surface px-3 py-2 text-left text-xs text-ink-soft shadow-sm transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -421,6 +418,16 @@ export default function Home({ auth, onLogout }) {
             className="border-t border-line bg-surface px-4 py-3"
           >
             <div className="mx-auto flex max-w-2xl gap-2">
+              <button
+                type="button"
+                onClick={novaConversa}
+                disabled={sending || messages.length === 0}
+                title="Limpar conversa"
+                aria-label="Limpar conversa"
+                className="flex items-center rounded-field border border-line bg-app px-3 text-ink-muted transition-colors hover:border-primary/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <IconTrash size={16} />
+              </button>
               <input
                 ref={inputRef}
                 autoFocus
