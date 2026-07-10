@@ -9,6 +9,7 @@ import {
   IconAlert,
   IconCheck,
   IconChevron,
+  IconPlus,
   IconRefresh,
   IconSend,
 } from "../components/icons.jsx";
@@ -263,6 +264,16 @@ export default function Home({ auth, onLogout }) {
     enviar(text.trim());
   }
 
+  // Zera o contexto da conversa (o backend é stateless: o histórico só existe
+  // aqui) e volta ao estado inicial, com sugestões novas.
+  function novaConversa() {
+    if (sending) return;
+    setMessages([]);
+    setText("");
+    setSugestoes(sortearSugestoes());
+    inputRef.current?.focus();
+  }
+
   return (
     <div className="flex h-screen flex-col bg-app">
       {/* Topo: marca + modelo + usuário logado */}
@@ -295,6 +306,16 @@ export default function Home({ auth, onLogout }) {
               ))}
             </select>
           </label>
+          <button
+            type="button"
+            onClick={novaConversa}
+            disabled={sending || messages.length === 0}
+            title="Zerar a conversa e começar do zero"
+            className="flex items-center gap-1.5 rounded-field border border-white/20 px-3 py-1.5 text-sm transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+          >
+            <IconPlus size={15} />
+            <span className="hidden sm:inline">Nova conversa</span>
+          </button>
           <span className="hidden text-sm font-medium md:inline">
             {auth.username}
           </span>
@@ -369,7 +390,7 @@ export default function Home({ auth, onLogout }) {
               largas, onde sobra espaço): overlay absoluto — não mexe no
               tamanho do chat. Na tela vazia o EmptyState já cumpre o papel. */}
           {messages.length > 0 && (
-            <div className="absolute bottom-20 right-4 z-10 hidden w-56 flex-col items-end gap-2 xl:flex">
+            <div className="absolute bottom-20 right-10 z-10 hidden w-56 flex-col items-end gap-2 xl:flex">
               {sugestoes.map((q) => (
                 <button
                   key={q}

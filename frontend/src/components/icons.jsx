@@ -69,6 +69,15 @@ export function IconAlert({ size = 15, className = "", ...props }) {
   );
 }
 
+export function IconPlus({ size = 15, className = "", ...props }) {
+  return (
+    <Icon size={size} className={className} {...props}>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </Icon>
+  );
+}
+
 export function IconRefresh({ size = 15, className = "", ...props }) {
   return (
     <Icon size={size} className={className} {...props}>
